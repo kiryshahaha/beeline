@@ -1,6 +1,7 @@
 """HTTP contracts exercised against migrated PostgreSQL, with a fresh session per request."""
 
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -106,6 +107,28 @@ class TicketsApiTests(DatabaseTestCase):
         response = self.create(actual_duration_minutes=0)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["actual_duration_minutes"], 0)
+
+    def test_sql_like_text_is_returned_unchanged(self):
+        values = {
+            "title": "Офис 'Север'; SELECT 1 --",
+            "work_type": "Wi-Fi 'настройка'",
+            "description": "Кавычки: ' и \"; параметры :ticket_id и % остаются текстом.",
+        }
+        response = self.create(**values)
+        self.assertEqual(response.status_code, 201, response.text)
+        fetched = self.client.get(response.headers["Location"])
+        self.assertEqual(fetched.status_code, 200)
+        for field, value in values.items():
+            self.assertEqual(fetched.json()[field], value)
+        self.assertEqual(self.count_tickets(), 1)
+
+    def test_failure_after_insert_rolls_back_ticket(self):
+        with patch(
+            "app.modules.tickets.service.get_ticket", side_effect=RuntimeError("response failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "response failed"):
+                self.create()
+        self.assertEqual(self.count_tickets(), 0)
 
     def test_all_agreed_statuses_are_accepted(self):
         for status in TicketStatus:
