@@ -11,11 +11,10 @@ from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from pydantic import ValidationError
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.models import Building, City, Location, Street, Ticket
 from app.db.session import get_engine
 
 MOSCOW_TIME = timezone(timedelta(hours=3))
@@ -124,94 +123,132 @@ class SeedResult:
     created: bool
 
 
-def get_or_create(session: Session, model, conditions, **values):
-    instance = session.scalar(select(model).where(*conditions))
-    if instance is None:
-        instance = model(**values)
-        session.add(instance)
-        session.flush()
-    return instance
+def get_or_create_id(session: Session, find_sql: str, insert_sql: str, parameters: dict) -> int:
+    """Execute the literal SQL supplied below; values are always bound separately."""
+    existing_id = session.execute(text(find_sql), parameters).scalar_one_or_none()
+    if existing_id is not None:
+        return existing_id
+    return session.execute(text(insert_sql), parameters).scalar_one()
 
 
 def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     """Caller owns the transaction. Existing tickets and filled coordinates are preserved."""
     # Serialize copies of this script; the lock is released on commit or rollback.
     session.execute(text("SELECT pg_advisory_xact_lock(20260912, 1)"))
-    city = get_or_create(
-        session, City, [func.lower(City.name) == func.lower(CITY_NAME)], name=CITY_NAME
+    city_id = get_or_create_id(
+        session,
+        "SELECT id FROM cities WHERE lower(name) = lower(:name)",
+        "INSERT INTO cities (name) VALUES (:name) RETURNING id",
+        {"name": CITY_NAME},
     )
     results = []
     for visit in DEMO_VISITS:
-        street = get_or_create(
+        street_id = get_or_create_id(
             session,
-            Street,
-            [Street.city_id == city.id, func.lower(Street.name) == func.lower(visit.street)],
-            city_id=city.id,
-            name=visit.street,
+            """
+            SELECT id FROM streets
+            WHERE city_id = :city_id AND lower(name) = lower(:name)
+            """,
+            "INSERT INTO streets (city_id, name) VALUES (:city_id, :name) RETURNING id",
+            {"city_id": city_id, "name": visit.street},
         )
-        building = get_or_create(
+        building_id = get_or_create_id(
             session,
-            Building,
-            [
-                Building.street_id == street.id,
-                func.lower(Building.number) == func.lower(visit.building),
-                Building.block.is_(None),
-            ],
-            street_id=street.id,
-            number=visit.building,
+            """
+            SELECT id FROM buildings
+            WHERE street_id = :street_id AND lower(number) = lower(:number) AND block IS NULL
+            """,
+            "INSERT INTO buildings (street_id, number) VALUES (:street_id, :number) RETURNING id",
+            {"street_id": street_id, "number": visit.building},
         )
-        location = get_or_create(
-            session,
-            Location,
-            [
-                Location.building_id == building.id,
-                Location.entrance_id.is_(None),
-                Location.apartment.is_(None),
-            ],
-            building_id=building.id,
-            latitude=Decimal(visit.latitude),
-            longitude=Decimal(visit.longitude),
+        coordinates = {"latitude": Decimal(visit.latitude), "longitude": Decimal(visit.longitude)}
+        location = (
+            session.execute(
+                text("""
+                SELECT id, latitude, longitude FROM locations
+                WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL
+                FOR UPDATE
+            """),
+                {"building_id": building_id},
+            )
+            .mappings()
+            .one_or_none()
         )
-        coordinates = (Decimal(visit.latitude), Decimal(visit.longitude))
-        if location.latitude is None and location.longitude is None:
-            location.latitude, location.longitude = coordinates
-        elif (location.latitude, location.longitude) != coordinates:
+        if location is None:
+            location = (
+                session.execute(
+                    text("""
+                    INSERT INTO locations (building_id, latitude, longitude)
+                    VALUES (:building_id, :latitude, :longitude)
+                    RETURNING id, latitude, longitude
+                """),
+                    {"building_id": building_id, **coordinates},
+                )
+                .mappings()
+                .one()
+            )
+
+        location_id = location["id"]
+        if location["latitude"] is None and location["longitude"] is None:
+            session.execute(
+                text("""
+                    UPDATE locations SET latitude = :latitude, longitude = :longitude
+                    WHERE id = :location_id
+                """),
+                {"location_id": location_id, **coordinates},
+            )
+        elif (
+            location["latitude"] != coordinates["latitude"]
+            or location["longitude"] != coordinates["longitude"]
+        ):
             raise RuntimeError(
-                f"У location_id={location.id} уже другие координаты. "
+                f"У location_id={location_id} уже другие координаты. "
                 "Заполнение отменено: проверьте это место вручную."
             )
 
         # Natural key for this fixed demo set; dates/statuses are not overwritten on reruns.
-        ticket = session.scalar(
-            select(Ticket).where(Ticket.location_id == location.id, Ticket.title == visit.title)
-        )
-        created = ticket is None
+        ticket_id = session.execute(
+            text("SELECT id FROM tickets WHERE location_id = :location_id AND title = :title"),
+            {"location_id": location_id, "title": visit.title},
+        ).scalar()
+        created = ticket_id is None
         if created:
-            ticket = Ticket(
-                location_id=location.id,
-                title=visit.title,
-                description=(
-                    "Учебная заявка: работа, длительность и окно визита вымышлены. "
-                    "Это не сообщение о реальной неисправности по данному адресу."
-                ),
-                work_type=visit.work_type,
-                visit_window_start=datetime.combine(
-                    visit_date, time(visit.start_hour), MOSCOW_TIME
-                ),
-                visit_window_end=datetime.combine(visit_date, time(visit.end_hour), MOSCOW_TIME),
-                estimated_duration_minutes=visit.duration_minutes,
-            )
-            session.add(ticket)
-            session.flush()
+            ticket_id = session.execute(
+                text("""
+                    INSERT INTO tickets (
+                        location_id, title, description, work_type,
+                        visit_window_start, visit_window_end, estimated_duration_minutes
+                    ) VALUES (
+                        :location_id, :title, :description, :work_type,
+                        :visit_window_start, :visit_window_end, :estimated_duration_minutes
+                    )
+                    RETURNING id
+                """),
+                {
+                    "location_id": location_id,
+                    "title": visit.title,
+                    "description": (
+                        "Учебная заявка: работа, длительность и окно визита вымышлены. "
+                        "Это не сообщение о реальной неисправности по данному адресу."
+                    ),
+                    "work_type": visit.work_type,
+                    "visit_window_start": datetime.combine(
+                        visit_date, time(visit.start_hour), MOSCOW_TIME
+                    ),
+                    "visit_window_end": datetime.combine(
+                        visit_date, time(visit.end_hour), MOSCOW_TIME
+                    ),
+                    "estimated_duration_minutes": visit.duration_minutes,
+                },
+            ).scalar_one()
         results.append(
             SeedResult(
-                ticket_id=ticket.id,
-                location_id=location.id,
+                ticket_id=ticket_id,
+                location_id=location_id,
                 address=f"{CITY_NAME}, {visit.street}, {visit.building}",
                 created=created,
             )
         )
-    session.flush()
     return results
 
 
