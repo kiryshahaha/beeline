@@ -1,72 +1,19 @@
 """Integration tests use migrations and a unique schema in a dedicated test database."""
 
-import os
-import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
-from uuid import uuid4
 
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import create_engine, delete, func, inspect, select
-from sqlalchemy.engine import make_url
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.db.models import Building, City, Entrance, Location, Street, Ticket
 from app.modules.tickets.enums import TicketStatus
+from tests.support import DatabaseTestCase
 
 
-class DatabaseTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        database_url = os.getenv("TEST_DATABASE_URL")
-        if not database_url:
-            raise unittest.SkipTest("Set TEST_DATABASE_URL for PostgreSQL integration tests")
-        parsed_url = make_url(database_url)
-        if parsed_url.get_backend_name() != "postgresql" or not (
-            parsed_url.database or ""
-        ).endswith("_test"):
-            raise RuntimeError(
-                "TEST_DATABASE_URL must point to a PostgreSQL database ending in _test"
-            )
-
-        cls.schema = "beeline_test_" + uuid4().hex
-        cls.admin_engine = create_engine(database_url)
-        cls.addClassCleanup(cls.admin_engine.dispose)
-        with cls.admin_engine.begin() as connection:
-            connection.execute(CreateSchema(cls.schema))
-        cls.addClassCleanup(cls.drop_schema)
-        cls.engine = create_engine(
-            database_url, connect_args={"options": f"-csearch_path={cls.schema}"}
-        )
-        cls.addClassCleanup(cls.engine.dispose)
-
-        config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-        with cls.engine.connect() as connection:
-            config.attributes["connection"] = connection
-            command.upgrade(config, "head")
-            command.downgrade(config, "base")
-            if set(inspect(connection).get_table_names()) - {"alembic_version"}:
-                raise AssertionError("Downgrade left domain tables behind")
-            connection.commit()
-            command.upgrade(config, "head")
-            command.check(config)
-
-    @classmethod
-    def drop_schema(cls):
-        with cls.admin_engine.begin() as connection:
-            connection.execute(DropSchema(cls.schema, cascade=True))
-
+class DatabaseTests(DatabaseTestCase):
     def setUp(self):
-        self.connection = self.engine.connect()
-        self.transaction = self.connection.begin()
-        self.session = Session(bind=self.connection, join_transaction_mode="create_savepoint")
-        self.addCleanup(self.connection.close)
-        self.addCleanup(self.transaction.rollback)
-        self.addCleanup(self.session.close)
+        super().setUp()
 
         self.city = self.save(City(name="Санкт-Петербург"))
         self.street = self.save(Street(city_id=self.city.id, name="улица Ленина"))
