@@ -21,7 +21,7 @@ MOSCOW_TIME = timezone(timedelta(hours=3))
 CITY_NAME = "Санкт-Петербург"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class DemoVisit:
     street: str
     building: str
@@ -33,86 +33,158 @@ class DemoVisit:
     start_hour: int
     end_hour: int
     duration_minutes: int
+    block: str | None = None
+    entrance: str | None = None
+    floor: int | None = None
+    apartment: str | None = None
+
+    @property
+    def address(self) -> str:
+        parts = [CITY_NAME, self.street, f"д. {self.building}"]
+        if self.block is not None:
+            parts.append(self.block)
+        if self.entrance is not None:
+            parts.append(f"подъезд {self.entrance}")
+        if self.floor is not None:
+            parts.append(f"этаж {self.floor}")
+        if self.apartment is not None:
+            parts.append(f"кв./пом. {self.apartment}")
+        return ", ".join(parts)
 
 
-# Address/coordinate pairs checked on 2026-09-12; jobs and windows are fictional.
-# These are map points for buildings, not verified vehicle access or apartment positions.
+# Buildings, blocks and map coordinates checked on 2026-09-13.
+# Entrance/floor/apartment assignments and all jobs are fictional by user agreement.
+# Repeated apartments share the building's map point, not a surveyed entrance position.
 DEMO_VISITS = (
     DemoVisit(
-        "Лиговский проспект",
-        "30",
-        "59.927563",
-        "30.360613",
-        "https://yandex.by/maps/2/saint-petersburg/house/ligovskiy_prospekt_30/"
-        "Z0kYdQFgT0QEQFtjfXVzdnllZw==/",
-        "[Демо] Настроить Wi-Fi",
-        "Настройка сети",
-        9,
-        13,
-        60,
+        street="Искровский проспект",
+        building="4",
+        block="корпус 2",
+        latitude="59.9156",
+        longitude="30.4631",
+        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
+        entrance="1",
+        floor=3,
+        apartment="12",
+        title="[Демо] Настроить Wi-Fi",
+        work_type="Настройка сети",
+        start_hour=9,
+        end_hour=13,
+        duration_minutes=60,
     ),
     DemoVisit(
-        "Инженерная улица",
-        "4",
-        "59.938694",
-        "30.332595",
-        "https://roskarta.net/Санкт-Петербург/Инженерная_улица/4",
-        "[Демо] Проверить соединение",
-        "Диагностика сети",
-        10,
-        14,
-        45,
+        street="Искровский проспект",
+        building="4",
+        block="корпус 2",
+        latitude="59.9156",
+        longitude="30.4631",
+        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
+        entrance="1",
+        floor=4,
+        apartment="16",
+        title="[Демо] Подключить соседнюю квартиру",
+        work_type="Настройка сети",
+        start_hour=10,
+        end_hour=14,
+        duration_minutes=45,
     ),
     DemoVisit(
-        "Большой проспект Петроградской стороны",
-        "84",
-        "59.9644",
-        "30.3092",
-        "https://spb.ginfo.ru/ulicy/bolshoy_prospekt_petrogradskoy_storony/84/",
-        "[Демо] Заменить маршрутизатор",
-        "Замена оборудования",
-        11,
-        16,
-        60,
+        street="Искровский проспект",
+        building="4",
+        block="корпус 2",
+        latitude="59.9156",
+        longitude="30.4631",
+        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/4k2/info/",
+        entrance="1",
+        floor=3,
+        apartment="12",
+        title="[Демо] Повторно проверить соединение",
+        work_type="Диагностика сети",
+        start_hour=14,
+        end_hour=18,
+        duration_minutes=30,
     ),
     DemoVisit(
-        "Московский проспект",
-        "111",
-        "59.88911",
-        "30.318734",
-        "https://stilnaya.com/contacts/stores/64455/",
-        "[Демо] Проверить кабель",
-        "Диагностика сети",
-        9,
-        12,
-        30,
+        street="Искровский проспект",
+        building="3",
+        block="корпус 2",
+        latitude="59.9127",
+        longitude="30.458",
+        source_url="https://spb.ginfo.ru/ulicy/iskrovskiy_prospekt/3k2/info/",
+        entrance="2",
+        floor=5,
+        apartment="56",
+        title="[Демо] Заменить маршрутизатор",
+        work_type="Замена оборудования",
+        start_hour=11,
+        end_hour=16,
+        duration_minutes=60,
     ),
     DemoVisit(
-        "Библиотечный переулок",
-        "4",
-        "59.9068",
-        "30.2967",
-        "https://spb.ginfo.ru/ulicy/bibliotechnyy_pereulok/4/",
-        "[Демо] Подключить точку доступа",
-        "Настройка сети",
-        13,
-        18,
-        90,
+        street="улица Дыбенко",
+        building="8",
+        block="корпус 2",
+        latitude="59.9015",
+        longitude="30.4548",
+        source_url="https://spb.ginfo.ru/ulicy/ulica_dybenko/8k2/info/",
+        entrance="1",
+        floor=2,
+        apartment="7",
+        title="[Демо] Проверить кабель",
+        work_type="Диагностика сети",
+        start_hour=9,
+        end_hour=12,
+        duration_minutes=30,
     ),
     DemoVisit(
-        "Университетская набережная",
-        "13",
-        "59.939271",
-        "30.298162",
-        "https://roskarta.net/Санкт-Петербург/Университетская_набережная/13",
-        "[Демо] Проверить покрытие Wi-Fi",
-        "Диагностика сети",
-        14,
-        18,
-        45,
+        street="улица Дыбенко",
+        building="27",
+        block="корпус 1",
+        latitude="59.9056",
+        longitude="30.4799",
+        source_url="https://spb.ginfo.ru/ulicy/ulica_dybenko/27k1/info/",
+        entrance="2",
+        floor=3,
+        apartment="48",
+        title="[Демо] Подключить точку доступа",
+        work_type="Настройка сети",
+        start_hour=13,
+        end_hour=18,
+        duration_minutes=90,
+    ),
+    DemoVisit(
+        street="Коломяжский проспект",
+        building="34",
+        block="корпус 2",
+        latitude="60.0137",
+        longitude="30.2931",
+        source_url="https://spb.ginfo.ru/ulicy/kolomyazhskiy_prospekt/34k2/info/",
+        entrance="1",
+        floor=6,
+        apartment="22",
+        title="[Демо] Проверить покрытие Wi-Fi",
+        work_type="Диагностика сети",
+        start_hour=14,
+        end_hour=18,
+        duration_minutes=45,
+    ),
+    DemoVisit(
+        street="проспект Энергетиков",
+        building="54",
+        block="корпус 2",
+        latitude="59.9667",
+        longitude="30.4348",
+        source_url="https://spb.ginfo.ru/ulicy/prospekt_energetikov/54k2/info/",
+        entrance="3",
+        floor=3,
+        apartment="87",
+        title="[Демо] Проверить скорость соединения",
+        work_type="Диагностика сети",
+        start_hour=10,
+        end_hour=15,
+        duration_minutes=45,
     ),
 )
-# The Moscow Avenue source lists longitude first; fields above are latitude, longitude.
 
 
 @dataclass(frozen=True)
@@ -156,20 +228,45 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             session,
             """
             SELECT id FROM buildings
-            WHERE street_id = :street_id AND lower(number) = lower(:number) AND block IS NULL
+            WHERE street_id = :street_id AND lower(number) = lower(:number)
+              AND lower(block) IS NOT DISTINCT FROM lower(CAST(:block AS text))
             """,
-            "INSERT INTO buildings (street_id, number) VALUES (:street_id, :number) RETURNING id",
-            {"street_id": street_id, "number": visit.building},
+            """
+            INSERT INTO buildings (street_id, number, block)
+            VALUES (:street_id, :number, :block) RETURNING id
+            """,
+            {"street_id": street_id, "number": visit.building, "block": visit.block},
         )
+        entrance_id = None
+        if visit.entrance is not None:
+            entrance_id = get_or_create_id(
+                session,
+                """
+                SELECT id FROM entrances
+                WHERE building_id = :building_id AND lower(number) = lower(:number)
+                """,
+                """
+                INSERT INTO entrances (building_id, number)
+                VALUES (:building_id, :number) RETURNING id
+                """,
+                {"building_id": building_id, "number": visit.entrance},
+            )
+        destination = {
+            "building_id": building_id,
+            "entrance_id": entrance_id,
+            "apartment": visit.apartment,
+        }
         coordinates = {"latitude": Decimal(visit.latitude), "longitude": Decimal(visit.longitude)}
         location = (
             session.execute(
                 text("""
-                SELECT id, latitude, longitude FROM locations
-                WHERE building_id = :building_id AND entrance_id IS NULL AND apartment IS NULL
+                SELECT id, floor, latitude, longitude FROM locations
+                WHERE building_id = :building_id
+                  AND entrance_id IS NOT DISTINCT FROM CAST(:entrance_id AS integer)
+                  AND lower(apartment) IS NOT DISTINCT FROM lower(CAST(:apartment AS text))
                 FOR UPDATE
             """),
-                {"building_id": building_id},
+                destination,
             )
             .mappings()
             .one_or_none()
@@ -178,17 +275,31 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             location = (
                 session.execute(
                     text("""
-                    INSERT INTO locations (building_id, latitude, longitude)
-                    VALUES (:building_id, :latitude, :longitude)
-                    RETURNING id, latitude, longitude
+                    INSERT INTO locations (
+                        building_id, entrance_id, floor, apartment, latitude, longitude
+                    ) VALUES (
+                        :building_id, :entrance_id, :floor, :apartment, :latitude, :longitude
+                    )
+                    RETURNING id, floor, latitude, longitude
                 """),
-                    {"building_id": building_id, **coordinates},
+                    {**destination, "floor": visit.floor, **coordinates},
                 )
                 .mappings()
                 .one()
             )
 
         location_id = location["id"]
+        if visit.floor is not None:
+            if location["floor"] is None:
+                session.execute(
+                    text("UPDATE locations SET floor = :floor WHERE id = :location_id"),
+                    {"floor": visit.floor, "location_id": location_id},
+                )
+            elif location["floor"] != visit.floor:
+                raise RuntimeError(
+                    f"У location_id={location_id} уже другой этаж. "
+                    "Заполнение отменено: проверьте это место вручную."
+                )
         if location["latitude"] is None and location["longitude"] is None:
             session.execute(
                 text("""
@@ -228,7 +339,8 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                     "location_id": location_id,
                     "title": visit.title,
                     "description": (
-                        "Учебная заявка: работа, длительность и окно визита вымышлены. "
+                        "Учебная заявка: подъезд, этаж, квартира, работа, длительность "
+                        "и окно визита вымышлены. Дом, корпус и координаты взяты из источника. "
                         "Это не сообщение о реальной неисправности по данному адресу."
                     ),
                     "work_type": visit.work_type,
@@ -245,7 +357,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
             SeedResult(
                 ticket_id=ticket_id,
                 location_id=location_id,
-                address=f"{CITY_NAME}, {visit.street}, {visit.building}",
+                address=visit.address,
                 created=created,
             )
         )
