@@ -50,7 +50,8 @@ backend/
 ├── migrations/               # последовательные изменения схемы БД
 ├── tests/                    # проверки приложения и ограничений БД
 ├── alembic.ini               # настройка миграций
-├── pyproject.toml            # зависимости и настройки Ruff
+├── requirements.txt          # все Python-зависимости, включая проверки
+├── ruff.toml                 # настройки проверки и оформления Python-кода
 ├── .env.example              # пример переменных окружения
 ├── .gitignore                # исключает окружение, секреты и временные файлы
 ├── .gitattributes            # единые переводы строк LF в Git
@@ -208,14 +209,61 @@ ORDER BY c.name, t.status;
 
 ## Локальный запуск
 
-Требуются Python 3.12+, `uv` и работающий PostgreSQL 15+.
+Требуются Python 3.12+ с `pip` и работающий PostgreSQL 15+.
 База должна использовать UTF-8 и локаль с поддержкой регистра кириллицы
 (например, ICU `ru-RU`): она влияет на сравнение русских названий через `lower()`.
-Все следующие команды выполняются из `C:\proga\projects\beeline\backend`.
+Все зависимости устанавливаются из одного `requirements.txt`. Отдельно устанавливать
+FastAPI, SQLAlchemy, драйвер PostgreSQL или Ruff не требуется. Сам сервер PostgreSQL
+устанавливается отдельно: `pip` устанавливает только Python-библиотеки.
+
+Откройте PowerShell и выполните команды по порядку:
 
 ```powershell
-uv sync
-Copy-Item .env.example .env
+cd C:\proga\projects\beeline\backend
+python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip check
+```
+
+`python --version` должен показать Python 3.12 или новее. Если установлен другой
+Python по умолчанию, выберите нужную версию через Windows Launcher, например
+`py -3.12 -m venv .venv`.
+
+`venv` создаёт отдельное окружение в `.venv`, а команда `Activate.ps1` выбирает его
+Python для текущего терминала. Обычно слева от приглашения появляется `(.venv)`.
+Проверить используемый интерпретатор можно командой `python -c "import sys; print(sys.executable)"`:
+путь должен заканчиваться на `backend\.venv\Scripts\python.exe`.
+`pip install` скачивает зависимости, а `pip check` проверяет их совместимость.
+
+Папки `.venv/` и `venv/` исключены из Git: библиотеки каждый участник устанавливает
+локально из `requirements.txt`.
+
+Окружение создают один раз. В новом терминале достаточно перейти в папку `backend`
+и снова выполнить `.\.venv\Scripts\Activate.ps1`. После изменения списка зависимостей
+повторите `python -m pip install -r requirements.txt`. Для выхода из окружения — `deactivate`.
+
+Если PowerShell запрещает запуск `Activate.ps1`, можно работать без активации,
+явно указывая Python окружения:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+После установки приложение с `/health` и `/docs` можно запустить командой
+`python -m uvicorn app.main:app --reload`; для этих эндпоинтов база пока не требуется.
+Для создания таблиц настройте PostgreSQL по инструкции ниже.
+
+## Настройка PostgreSQL
+
+Следующие команды выполняются из `C:\proga\projects\beeline\backend`
+с активированным окружением. Создайте `.env`, если его ещё нет:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 Создайте отдельные роль и базу на своём локальном PostgreSQL. Например, через
@@ -232,8 +280,8 @@ createdb -h localhost -U postgres --owner=beeline beeline
 `.env` не входит в Git; переменные окружения имеют приоритет над файлом.
 
 ```powershell
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload
 ```
 
 - Документация API: <http://127.0.0.1:8000/docs>.
@@ -246,16 +294,16 @@ uv run uvicorn app.main:app --reload
 ## Миграции
 
 ```powershell
-uv run alembic current
-uv run alembic upgrade head
-uv run alembic check
+python -m alembic current
+python -m alembic upgrade head
+python -m alembic check
 ```
 
 После изменения модели создаём следующую миграцию, читаем получившийся файл и
 проверяем применение на отдельной базе:
 
 ```powershell
-uv run alembic revision --autogenerate -m "describe schema change"
+python -m alembic revision --autogenerate -m "describe schema change"
 ```
 
 `alembic downgrade base` удаляет таблицы первой миграции вместе с их данными:
@@ -265,9 +313,9 @@ uv run alembic revision --autogenerate -m "describe schema change"
 ## Проверки
 
 ```powershell
-uv run ruff check .
-uv run ruff format --check .
-uv run python -m unittest discover -s tests -v
+python -m ruff check .
+python -m ruff format --check .
+python -m unittest discover -s tests -v
 ```
 
 Без `TEST_DATABASE_URL` интеграционные проверки БД пропускаются; это видно в выводе
@@ -276,7 +324,7 @@ unittest. Для полного прогона создайте отдельну
 
 ```powershell
 $env:TEST_DATABASE_URL = 'postgresql+psycopg://beeline:beeline@localhost:5432/beeline_test'
-uv run python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 Тесты применяют и откатывают миграцию только в отдельной схеме этой тестовой базы,
@@ -286,12 +334,30 @@ uv run python -m unittest discover -s tests -v
 
 Результат первичной проверки (12.09.2026): все 18 тестов прошли на PostgreSQL 17,
 включая применение → откат → повторное применение миграции и `alembic check`.
-Из-за недоступности PyPI обычная установка `uv sync` пока не завершилась:
+Из-за недоступности PyPI обычная установка зависимостей пока не завершилась:
 проверка выполнена на Python 3.13 с уже установленными локальными пакетами
 (FastAPI 0.116.1, SQLAlchemy 2.0.36, Alembic 1.18.4, psycopg 3.2.9).
 Временные файлы проверки находятся в игнорируемой `.local/` и не являются частью
-проекта. Ruff пока не запускался. `uv.lock` пока не создан; после восстановления
-доступа к PyPI необходимо выполнить `uv sync`, проверки выше и закоммитить lock-файл.
+проекта. Ruff пока не запускался. После восстановления доступа к PyPI нужно выполнить
+`python -m pip install -r requirements.txt`, `python -m pip check` и проверки выше.
+
+## Установка зависимостей и их обновление
+
+По решению команды используем стандартные `venv`, `pip` и один `requirements.txt`.
+В нём перечислены библиотеки приложения и инструменты проверки кода. Диапазоны версий
+сохранены из первоначальной конфигурации; полной фиксации всех версий пока нет.
+Зафиксируем проверенный набор после успешной установки в чистое окружение.
+Настройки Ruff находятся отдельно в `ruff.toml`.
+
+При переходе на этот способ проверены создание `.venv` стандартным `venv`,
+активация в PowerShell и запуск `pip` из окружения. Оба варианта имени окружения
+(`.venv` и `venv`) игнорируются Git. Установка через `pip` пока не завершилась:
+индекс не вернул доступную версию FastAPI (`No matching distribution found`).
+Проверки приложения в новом окружении нужно выполнить после успешной установки.
+
+Если `pip install` завершается ошибкой подключения к `pypi.org` или
+`files.pythonhosted.org`, установка не завершена. Сохраните текст ошибки для
+диагностики подключения; повторять создание окружения для этого не требуется.
 
 ## Следующие согласуемые изменения
 
