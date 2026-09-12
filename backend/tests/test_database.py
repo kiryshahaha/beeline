@@ -26,10 +26,9 @@ class DatabaseTests(unittest.TestCase):
         if not database_url:
             raise unittest.SkipTest("Set TEST_DATABASE_URL for PostgreSQL integration tests")
         parsed_url = make_url(database_url)
-        if (
-            parsed_url.get_backend_name() != "postgresql"
-            or not (parsed_url.database or "").endswith("_test")
-        ):
+        if parsed_url.get_backend_name() != "postgresql" or not (
+            parsed_url.database or ""
+        ).endswith("_test"):
             raise RuntimeError(
                 "TEST_DATABASE_URL must point to a PostgreSQL database ending in _test"
             )
@@ -73,14 +72,16 @@ class DatabaseTests(unittest.TestCase):
         self.street = self.save(Street(city_id=self.city.id, name="улица Ленина"))
         self.building = self.save(Building(street_id=self.street.id, number="12А"))
         self.entrance = self.save(Entrance(building_id=self.building.id, number="1"))
-        self.location = self.save(Location(
-            building_id=self.building.id,
-            entrance_id=self.entrance.id,
-            apartment="24Б",
-            floor=5,
-            latitude=Decimal("59.940000"),
-            longitude=Decimal("30.320000"),
-        ))
+        self.location = self.save(
+            Location(
+                building_id=self.building.id,
+                entrance_id=self.entrance.id,
+                apartment="24Б",
+                floor=5,
+                latitude=Decimal("59.940000"),
+                longitude=Decimal("30.320000"),
+            )
+        )
         self.window_start = datetime(2026, 9, 12, 10, tzinfo=timezone(timedelta(hours=3)))
 
     def save(self, model):
@@ -105,11 +106,13 @@ class DatabaseTests(unittest.TestCase):
                 self.save(model)
 
     def test_two_tickets_share_apartment_and_keep_manual_duration(self):
-        first = self.save(self.ticket(
-            planned_start_at=self.window_start + timedelta(hours=1),
-            planned_end_at=self.window_start + timedelta(hours=2),
-            actual_duration_minutes=75,
-        ))
+        first = self.save(
+            self.ticket(
+                planned_start_at=self.window_start + timedelta(hours=1),
+                planned_end_at=self.window_start + timedelta(hours=2),
+                actual_duration_minutes=75,
+            )
+        )
         second = self.save(self.ticket(title="Проверить соединение"))
         self.session.expire_all()
         self.assertEqual(first.location_id, second.location_id)
@@ -145,9 +148,11 @@ class DatabaseTests(unittest.TestCase):
         self.assertNotEqual(other_entrance.id, self.entrance.id)
 
     def test_apartment_duplicate_cannot_be_disguised_by_floor(self):
-        self.rejected(Location(
-            building_id=self.building.id, entrance_id=self.entrance.id, apartment="24б", floor=7
-        ))
+        self.rejected(
+            Location(
+                building_id=self.building.id, entrance_id=self.entrance.id, apartment="24б", floor=7
+            )
+        )
 
     def test_location_with_unspecified_entrance_and_apartment_is_unique(self):
         self.save(Location(building_id=self.building.id))
@@ -161,9 +166,9 @@ class DatabaseTests(unittest.TestCase):
         invalid_pairs = [(60, None), (None, 30), (91, 30), (60, 181), (-91, 0), (0, -181)]
         for latitude, longitude in invalid_pairs:
             with self.subTest(latitude=latitude, longitude=longitude):
-                self.rejected(Location(
-                    building_id=self.building.id, latitude=latitude, longitude=longitude
-                ))
+                self.rejected(
+                    Location(building_id=self.building.id, latitude=latitude, longitude=longitude)
+                )
 
     def test_coordinate_boundaries_and_missing_coordinates_are_allowed(self):
         self.save(
@@ -230,7 +235,10 @@ class DatabaseTests(unittest.TestCase):
             .join(City, City.id == Street.city_id)
             .group_by(City.id, Ticket.status)
         ).all()
-        self.assertCountEqual(report, [
-            (self.city.id, TicketStatus.PLANNED, 2),
-            (other_city.id, TicketStatus.COMPLETED, 1),
-        ])
+        self.assertCountEqual(
+            report,
+            [
+                (self.city.id, TicketStatus.PLANNED, 2),
+                (other_city.id, TicketStatus.COMPLETED, 1),
+            ],
+        )
