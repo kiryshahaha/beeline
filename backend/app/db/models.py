@@ -7,5 +7,25 @@ from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
 from app.modules.streets.models import Street
 from app.modules.tickets.models import Ticket
+from app.modules.users.models import (
+    RefreshToken,
+    User,
+    Worker,
+    WorkerSkill,
+    WorkerSkillAssignment,
+)
 
-__all__ = ["Building", "City", "District", "Entrance", "Location", "Street", "Ticket"]
+__all__ = [
+    "Building",
+    "City",
+    "District",
+    "Entrance",
+    "Location",
+    "RefreshToken",
+    "Street",
+    "Ticket",
+    "User",
+    "Worker",
+    "WorkerSkill",
+    "WorkerSkillAssignment",
+]
