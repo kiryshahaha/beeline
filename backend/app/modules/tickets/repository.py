@@ -28,28 +28,12 @@ TICKET_SELECT_SQL = """
                     json_build_object(
                         'id', u.id,
                         'name', u.name,
-                        'surname', u.surname,
-                        'lastname', u.lastname,
-                        'username', u.username,
-                        'role', u.role,
-                        'workshift_start', w.workshift_start,
-                        'workshift_end', w.workshift_end,
-                        'assigned_at', ta.assigned_at,
-                        'skills', COALESCE(
-                            (
-                                SELECT json_agg(ws.skill ORDER BY ws.skill)
-                                FROM worker_skill_assignments wsa
-                                JOIN worker_skills ws ON ws.id = wsa.skill_id
-                                WHERE wsa.worker_id = u.id
-                            ),
-                            '[]'::json
-                        )
+                        'surname', u.surname
                     )
                     ORDER BY u.surname, u.name
                 )
                 FROM ticket_assignments ta
                 JOIN users u ON u.id = ta.worker_id
-                JOIN workers w ON w.user_id = ta.worker_id
                 WHERE ta.ticket_id = t.id
             ),
             '[]'::json

@@ -553,7 +553,9 @@ class TicketsApiTests(DatabaseTestCase):
         created = res.json()
         self.assertEqual(len(created["assignees"]), 1)
         self.assertEqual(created["assignees"][0]["id"], user1.id)
-        self.assertEqual(created["assignees"][0]["username"], "worker_test_1")
+        self.assertEqual(created["assignees"][0]["name"], "Иван")
+        self.assertEqual(created["assignees"][0]["surname"], "Иванов")
+        self.assertEqual(set(created["assignees"][0].keys()), {"id", "name", "surname"})
         ticket_id = created["id"]
 
         # 2. Assign second worker via POST /api/v1/tickets/{id}/assign

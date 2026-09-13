@@ -33,7 +33,7 @@ TICKET_CREATE_EXAMPLE = {
     "planned_end_at": None,
     "estimated_duration_minutes": 60,
     "actual_duration_minutes": None,
-    "worker_ids": [2],
+    "worker_ids": [],
 }
 
 TICKET_UPDATE_EXAMPLE = {
@@ -73,13 +73,6 @@ TICKET_READ_EXAMPLE = {
             "id": 2,
             "name": "Дмитрий",
             "surname": "Кузнецов",
-            "lastname": "Сергеевич",
-            "username": "demo_worker_1",
-            "role": "worker",
-            "workshift_start": "08:00:00",
-            "workshift_end": "17:00:00",
-            "skills": ["Монтаж ВОЛС", "Подключение абонентов"],
-            "assigned_at": "2026-09-14T09:00:00+03:00",
         }
     ],
     "created_at": "2026-09-13T09:00:00+03:00",
@@ -120,11 +113,13 @@ class TicketUserRead(BaseModel):
     role: UserRole
 
 
-class TicketAssigneeRead(TicketUserRead):
-    workshift_start: time
-    workshift_end: time
-    skills: list[str] = Field(default_factory=list)
-    assigned_at: AwareDatetime
+class TicketAssigneeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    surname: str
+
 
 
 class TicketFields(BaseModel):
