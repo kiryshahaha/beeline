@@ -2,11 +2,11 @@
 
 import hashlib
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import argon2
-from argon2 import PasswordHasher
 import jwt
+from argon2 import PasswordHasher
 
 from app.core.config import get_settings
 
@@ -39,22 +39,20 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Generate short-lived JWT access token."""
     settings = get_settings()
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
-    expire = now + (
-        expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
-    )
+    now = datetime.now(UTC)
+    expire = now + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
     to_encode.update({"exp": expire, "iat": now, "type": "access"})
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> tuple[str, datetime]:
+def create_refresh_token(
+    data: dict, expires_delta: timedelta | None = None
+) -> tuple[str, datetime]:
     """Generate long-lived JWT refresh token with unique jti; returns (token, expires_at)."""
     settings = get_settings()
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
-    expire = now + (
-        expires_delta or timedelta(days=settings.jwt_refresh_token_expire_days)
-    )
+    now = datetime.now(UTC)
+    expire = now + (expires_delta or timedelta(days=settings.jwt_refresh_token_expire_days))
     to_encode.update(
         {
             "exp": expire,

@@ -1,14 +1,12 @@
 """Integration tests for users, workers, skills, and JWT auth with refresh tokens."""
 
-from datetime import time
-
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
 from app.main import app
 from app.modules.users.enums import UserRole
-from app.modules.users.schemas import UserCreate, WorkerProfileCreate
+from app.modules.users.schemas import UserCreate
 from app.modules.users.service import create_user
 from tests.support import DatabaseTestCase
 
@@ -264,9 +262,7 @@ class UsersAndAuthApiTests(DatabaseTestCase):
         updated = patch_res.json()
         self.assertEqual(updated["name"], "ИгорьОбновленный")
         self.assertEqual(updated["worker_profile"]["workshift_start"], "10:00:00")
-        self.assertCountEqual(
-            updated["worker_profile"]["skills"], ["Навык 1", "Новый навык 2"]
-        )
+        self.assertCountEqual(updated["worker_profile"]["skills"], ["Навык 1", "Новый навык 2"])
 
         # Observer updating to existing username returns 409
         res_conflict = self.client.patch(

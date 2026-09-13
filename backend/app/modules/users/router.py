@@ -71,7 +71,10 @@ def get_user_by_id(
     session: DatabaseSession,
     _: CurrentUser,
 ) -> UserRead:
-    """Получить данные пользователя по его числовому ID. Доступно всем авторизованным пользователям."""
+    """Получить данные пользователя по его числовому ID.
+
+    Доступно всем авторизованным пользователям.
+    """
     try:
         return service.get_user(session, id)
     except service.UserNotFoundError as error:
@@ -144,7 +147,10 @@ def list_skills(
     session: DatabaseSession,
     _: CurrentUser,
 ) -> list[WorkerSkillRead]:
-    """Получить полный справочник профессиональных навыков. Доступно всем авторизованным пользователям."""
+    """Получить полный справочник профессиональных навыков.
+
+    Доступно всем авторизованным пользователям.
+    """
     return service.get_all_skills(session)
 
 

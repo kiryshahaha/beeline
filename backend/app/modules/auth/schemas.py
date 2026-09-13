@@ -26,9 +26,7 @@ class LoginRequest(BaseModel):
         extra="forbid", json_schema_extra={"examples": [LOGIN_REQUEST_EXAMPLE]}
     )
 
-    username: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)
-    ]
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
     password: Annotated[str, StringConstraints(min_length=1, max_length=128)]
 
 

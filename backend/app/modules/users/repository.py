@@ -158,7 +158,7 @@ def list_users(session: Session, role: str | None = None) -> list[RowMapping]:
                 LEFT JOIN workers AS w ON w.user_id = u.id
                 LEFT JOIN worker_skill_assignments AS wsa ON wsa.worker_id = w.user_id
                 LEFT JOIN worker_skills AS ws ON ws.id = wsa.skill_id
-                WHERE (:role IS NULL OR u.role = :role)
+                WHERE (CAST(:role AS TEXT) IS NULL OR u.role = :role)
                 GROUP BY u.id, u.name, u.surname, u.lastname, u.username, u.password_hash, u.role,
                          u.created_at, u.updated_at, w.workshift_start, w.workshift_end
                 ORDER BY u.id ASC

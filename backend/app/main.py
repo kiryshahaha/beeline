@@ -2,16 +2,17 @@
 
 from fastapi import FastAPI
 
-from app.modules.locations.router import router as locations_router
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
     LOGIN_REQUEST_EXAMPLE,
     REFRESH_TOKEN_REQUEST_EXAMPLE,
     TOKEN_RESPONSE_EXAMPLE,
 )
+from app.modules.locations.router import router as locations_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
-from app.modules.users.router import router as users_router, skills_router
+from app.modules.users.router import router as users_router
+from app.modules.users.router import skills_router
 from app.modules.users.schemas import (
     USER_CREATE_OBSERVER_EXAMPLE,
     USER_CREATE_WORKER_EXAMPLE,

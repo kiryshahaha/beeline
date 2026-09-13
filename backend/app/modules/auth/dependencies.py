@@ -3,9 +3,9 @@
 from collections.abc import Callable
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-import jwt
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
@@ -36,7 +36,9 @@ def get_current_user(
         raise credentials_exception from error
 
     try:
-        return users_service.get_user(session, user_id)
+        # Finish the authentication read before the endpoint starts its write transaction.
+        with session.begin():
+            return users_service.get_user(session, user_id)
     except users_service.UserNotFoundError as error:
         raise credentials_exception from error
 

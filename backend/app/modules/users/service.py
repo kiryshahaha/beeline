@@ -119,10 +119,7 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
         if existing_user is None:
             raise UserNotFoundError
 
-        if (
-            data.username is not None
-            and data.username.lower() != existing_user["username"].lower()
-        ):
+        if data.username is not None and data.username.lower() != existing_user["username"].lower():
             conflict = repository.find_user_by_username(session, data.username)
             if conflict is not None and conflict["id"] != user_id:
                 raise UsernameAlreadyExistsError
@@ -140,9 +137,7 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
         if "password" in dump and data.password is not None:
             user_values["password_hash"] = hash_password(data.password)
 
-        new_role = (
-            data.role if data.role is not None else UserRole(existing_user["role"])
-        )
+        new_role = data.role if data.role is not None else UserRole(existing_user["role"])
         if data.role is not None:
             user_values["role"] = data.role.value
 
@@ -154,9 +149,7 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
                 repository.delete_worker(session, user_id)
         elif new_role == UserRole.WORKER:
             worker_dump = (
-                data.worker_profile.model_dump(exclude_unset=True)
-                if data.worker_profile
-                else {}
+                data.worker_profile.model_dump(exclude_unset=True) if data.worker_profile else {}
             )
             shift_start = worker_dump.get("workshift_start") or existing_user["workshift_start"]
             shift_end = worker_dump.get("workshift_end") or existing_user["workshift_end"]
@@ -179,9 +172,7 @@ def update_user(session: Session, user_id: int, data: UserUpdate) -> UserRead:
         return get_user(session, user_id)
 
 
-def delete_user(
-    session: Session, user_id: int, current_user_id: int | None = None
-) -> None:
+def delete_user(session: Session, user_id: int, current_user_id: int | None = None) -> None:
     if current_user_id is not None and user_id == current_user_id:
         raise CannotDeleteSelfError
 

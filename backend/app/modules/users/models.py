@@ -9,7 +9,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
-    Text,
     Time,
     func,
 )
@@ -33,28 +32,23 @@ class User(IntegerIdMixin, Base):
             values_callable=lambda roles: [role.value for role in roles],
             native_enum=False,
             create_constraint=True,
-            name="user_role",
+            length=20,
+            name="role_valid",
         )
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     __table_args__ = (
         CheckConstraint("name = btrim(name) AND name <> ''", name="name_not_blank"),
-        CheckConstraint(
-            "surname = btrim(surname) AND surname <> ''", name="surname_not_blank"
-        ),
+        CheckConstraint("surname = btrim(surname) AND surname <> ''", name="surname_not_blank"),
         CheckConstraint(
             "lastname IS NULL OR (lastname = btrim(lastname) AND lastname <> '')",
             name="lastname_not_blank_if_present",
         ),
-        CheckConstraint(
-            "username = btrim(username) AND username <> ''", name="username_not_blank"
-        ),
+        CheckConstraint("username = btrim(username) AND username <> ''", name="username_not_blank"),
         CheckConstraint(
             "password_hash = btrim(password_hash) AND password_hash <> ''",
             name="password_hash_not_blank",
@@ -73,9 +67,7 @@ class Worker(Base):
     workshift_end: Mapped[time] = mapped_column(Time)
 
     __table_args__ = (
-        CheckConstraint(
-            "workshift_start <> workshift_end", name="workshift_duration_not_zero"
-        ),
+        CheckConstraint("workshift_start <> workshift_end", name="workshift_duration_not_zero"),
     )
 
 
@@ -103,14 +95,10 @@ class WorkerSkillAssignment(Base):
 class RefreshToken(IntegerIdMixin, Base):
     __tablename__ = "refresh_tokens"
 
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    token_hash: Mapped[str] = mapped_column(String(255), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(255))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("uq_refresh_tokens_token_hash", "token_hash", unique=True),)

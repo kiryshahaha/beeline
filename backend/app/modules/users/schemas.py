@@ -82,9 +82,7 @@ class WorkerSkillCreate(BaseModel):
         extra="forbid", json_schema_extra={"examples": [WORKER_SKILL_CREATE_EXAMPLE]}
     )
 
-    skill: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ]
+    skill: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
     @field_validator("skill")
     @classmethod
@@ -108,7 +106,10 @@ class WorkerProfileCreate(BaseModel):
 
     workshift_start: time = Field(description="Время начала рабочей смены, например 09:00:00")
     workshift_end: time = Field(
-        description="Время окончания рабочей смены (поддерживаются ночные смены, например 22:00:00 - 06:00:00)"
+        description=(
+            "Время окончания рабочей смены "
+            "(поддерживаются ночные смены, например 22:00:00 - 06:00:00)"
+        )
     )
     skills: list[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -147,26 +148,16 @@ class WorkerProfileRead(BaseModel):
 class UserCreate(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={
-            "examples": [USER_CREATE_WORKER_EXAMPLE, USER_CREATE_OBSERVER_EXAMPLE]
-        },
+        json_schema_extra={"examples": [USER_CREATE_WORKER_EXAMPLE, USER_CREATE_OBSERVER_EXAMPLE]},
     )
 
-    name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ]
-    surname: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    surname: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     lastname: (
-        Annotated[
-            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-        ]
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
         | None
     ) = None
-    username: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=50)
-    ]
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=50)]
     password: Annotated[str, StringConstraints(min_length=8, max_length=128)] = Field(
         description="Пароль пользователя (от 8 до 128 символов)"
     )
@@ -198,9 +189,7 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [USER_READ_WORKER_EXAMPLE, USER_READ_OBSERVER_EXAMPLE]
-        }
+        json_schema_extra={"examples": [USER_READ_WORKER_EXAMPLE, USER_READ_OBSERVER_EXAMPLE]}
     )
 
     id: PositiveInt32
@@ -234,9 +223,10 @@ class WorkerProfileUpdate(BaseModel):
 
     workshift_start: time | None = None
     workshift_end: time | None = None
-    skills: list[
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-    ] | None = None
+    skills: (
+        list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]]
+        | None
+    ) = None
 
     @field_validator("skills")
     @classmethod
@@ -271,18 +261,21 @@ class UserUpdate(BaseModel):
         json_schema_extra={"examples": [USER_UPDATE_EXAMPLE]},
     )
 
-    name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ] | None = None
-    surname: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ] | None = None
-    lastname: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
-    ] | None = None
-    username: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=50)
-    ] | None = None
+    name: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
+    surname: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
+    lastname: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+        | None
+    ) = None
+    username: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=50)] | None
+    ) = None
     password: Annotated[str, StringConstraints(min_length=8, max_length=128)] | None = Field(
         default=None, description="Новый пароль пользователя (если требуется сменить)"
     )

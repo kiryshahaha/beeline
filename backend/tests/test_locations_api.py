@@ -40,7 +40,7 @@ class LocationsApiTests(DatabaseTestCase):
         response = self.client.post("/api/v1/location", json=self.payload())
         self.assertEqual(response.status_code, 201, response.text)
         created = response.json()
-        
+
         self.assertIn("id", created)
         self.assertEqual(created["city"], "Санкт-Петербург")
         self.assertEqual(created["district"], "Невский район")
@@ -52,7 +52,7 @@ class LocationsApiTests(DatabaseTestCase):
         self.assertEqual(created["apartment"], "12")
         self.assertEqual(created["latitude"], 59.9156)
         self.assertEqual(created["longitude"], 30.4631)
-        
+
         # Verify db counts
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             self.assertEqual(session.scalar(select(func.count()).select_from(City)), 1)
@@ -67,14 +67,14 @@ class LocationsApiTests(DatabaseTestCase):
         response1 = self.client.post("/api/v1/location", json=self.payload())
         self.assertEqual(response1.status_code, 201)
         id1 = response1.json()["id"]
-        
+
         # Second call with the exact same data
         response2 = self.client.post("/api/v1/location", json=self.payload())
         self.assertEqual(response2.status_code, 201)
         id2 = response2.json()["id"]
-        
+
         self.assertEqual(id1, id2)
-        
+
         # Verify db counts remain 1 for each level
         with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
             self.assertEqual(session.scalar(select(func.count()).select_from(City)), 1)
@@ -83,7 +83,7 @@ class LocationsApiTests(DatabaseTestCase):
             self.assertEqual(session.scalar(select(func.count()).select_from(Building)), 1)
             self.assertEqual(session.scalar(select(func.count()).select_from(Entrance)), 1)
             self.assertEqual(session.scalar(select(func.count()).select_from(Location)), 1)
-            
+
     def test_post_missing_required_field_returns_422(self):
         payload = self.payload()
         del payload["city"]

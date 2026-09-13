@@ -496,7 +496,8 @@ class TicketsApiTests(DatabaseTestCase):
     def test_openapi_exposes_three_ticket_operations(self):
         schema = self.client.get("/openapi.json").json()
         paths = schema["paths"]
-        self.assertEqual(set(paths), {"/health", "/api/v1/tickets", "/api/v1/tickets/{id}"})
+        ticket_paths = {path for path in paths if path.startswith("/api/v1/tickets")}
+        self.assertEqual(ticket_paths, {"/api/v1/tickets", "/api/v1/tickets/{id}"})
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
         operation = paths["/api/v1/tickets"]["get"]

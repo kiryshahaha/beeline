@@ -21,7 +21,9 @@ LOCATION_CREATE_EXAMPLE = {
 
 
 class LocationCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [LOCATION_CREATE_EXAMPLE]})
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [LOCATION_CREATE_EXAMPLE]}
+    )
 
     city: NonEmptyStr = Field(description="Название города")
     district: NonEmptyStr = Field(description="Название района")

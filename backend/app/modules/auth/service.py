@@ -24,9 +24,7 @@ class InvalidTokenError(Exception):
     pass
 
 
-def authenticate_user(
-    session: Session, username: str, password: str
-) -> TokenResponse:
+def authenticate_user(session: Session, username: str, password: str) -> TokenResponse:
     with session.begin():
         user = users_repository.find_user_by_username(session, username)
         if user is None or not verify_password(password, user["password_hash"]):

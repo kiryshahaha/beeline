@@ -40,6 +40,7 @@ jobs:
 
     env:
       # Credentials belong only to this job's temporary PostgreSQL container.
+      DATABASE_URL: postgresql+psycopg://beeline_test:beeline_test@127.0.0.1:5432/beeline_test
       TEST_DATABASE_URL: postgresql+psycopg://beeline_test:beeline_test@127.0.0.1:5432/beeline_test
 
     steps:

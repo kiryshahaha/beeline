@@ -26,7 +26,9 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT pk_users PRIMARY KEY (id),
             CONSTRAINT ck_users_name_not_blank CHECK (name = btrim(name) AND name <> ''),
-            CONSTRAINT ck_users_surname_not_blank CHECK (surname = btrim(surname) AND surname <> ''),
+            CONSTRAINT ck_users_surname_not_blank CHECK (
+                surname = btrim(surname) AND surname <> ''
+            ),
             CONSTRAINT ck_users_lastname_not_blank_if_present CHECK (
                 lastname IS NULL OR (lastname = btrim(lastname) AND lastname <> '')
             ),
@@ -96,9 +98,7 @@ def upgrade() -> None:
         )
     """)
     op.execute("CREATE INDEX ix_refresh_tokens_user_id ON refresh_tokens (user_id)")
-    op.execute(
-        "CREATE UNIQUE INDEX uq_refresh_tokens_token_hash ON refresh_tokens (token_hash)"
-    )
+    op.execute("CREATE UNIQUE INDEX uq_refresh_tokens_token_hash ON refresh_tokens (token_hash)")
 
 
 def downgrade() -> None:

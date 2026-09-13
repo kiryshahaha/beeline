@@ -15,7 +15,7 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
             "INSERT INTO cities (name) VALUES (:name) RETURNING id",
             {"name": data.city},
         )
-        
+
         district_id = repository.get_or_create_id(
             session,
             """
@@ -25,7 +25,7 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
             "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
             {"city_id": city_id, "name": data.district},
         )
-        
+
         street_id = repository.get_or_create_id(
             session,
             """
@@ -35,7 +35,7 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
             "INSERT INTO streets (city_id, name) VALUES (:city_id, :name) RETURNING id",
             {"city_id": city_id, "name": data.street},
         )
-        
+
         building_id = repository.get_or_create_id(
             session,
             """
@@ -55,7 +55,7 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
                 "block": data.block,
             },
         )
-        
+
         entrance_id = None
         if data.entrance_number is not None:
             entrance_id = repository.get_or_create_id(
@@ -70,14 +70,14 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
                 """,
                 {"building_id": building_id, "number": data.entrance_number},
             )
-            
+
         destination = {
             "building_id": building_id,
             "entrance_id": entrance_id,
             "apartment": data.apartment,
         }
         coordinates = {"latitude": data.latitude, "longitude": data.longitude}
-        
+
         location_id = repository.get_or_create_id(
             session,
             """
@@ -96,11 +96,11 @@ def get_or_create_location(session: Session, data: LocationCreate) -> LocationRe
             """,
             {**destination, "floor": data.floor, **coordinates},
         )
-        
+
         details = repository.find_location(session, location_id)
         if details is None:
             raise RuntimeError("Failed to read created location")
-            
+
         return LocationRead(
             id=details["id"],
             city_id=details["city_id"],

@@ -1,7 +1,7 @@
 """Unit tests for password hashing (Argon2) and JWT token operations."""
 
-from datetime import timedelta
 import unittest
+from datetime import timedelta
 
 import jwt
 
