@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.db.session import get_session
 from app.main import app
+from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
 from tests.support import DatabaseTestCase
 
@@ -18,6 +19,7 @@ class TicketsApiTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
         city = self.save(City(name="Санкт-Петербург"))
+        self.city_id = city.id
         district = self.save(District(city_id=city.id, name="Невский район"))
         self.district_id = district.id
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
@@ -273,13 +275,147 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(
             location["address"], "Санкт-Петербург, Невский район, Тестовая улица, д. 12А, корпус 2"
         )
+        listed = self.client.get("/api/v1/tickets")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(listed.json(), [response.json()])
 
-    def test_openapi_exposes_only_two_ticket_operations(self):
+    def test_list_with_no_tickets_returns_empty_array(self):
+        response = self.client.get("/api/v1/tickets")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), [])
+
+    def test_list_returns_same_full_responses_as_get_by_id(self):
+        first = self.create()
+        second = self.create(status="completed", actual_duration_minutes=75)
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(second.status_code, 201, second.text)
+        expected = [
+            self.client.get(created.headers["Location"]).json() for created in (first, second)
+        ]
+        response = self.client.get("/api/v1/tickets")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), expected)
+
+    def test_list_filters_by_ids_and_status_with_and_semantics(self):
+        def another_location(city_id, district_name):
+            district = self.save(District(city_id=city_id, name=district_name))
+            street = self.save(Street(city_id=city_id, name="Другая улица"))
+            building = self.save(
+                Building(city_id=city_id, street_id=street.id, district_id=district.id, number="1")
+            )
+            return self.save(Location(building_id=building.id))
+
+        second_location = another_location(self.city_id, "Тестовый район")
+        other_city = self.save(City(name="Другой город"))
+        # The same district name in another city must not affect filtering by ID.
+        other_location = another_location(other_city.id, "Невский район")
+        second_location_id, other_location_id = second_location.id, other_location.id
+        other_city_id = other_city.id
+        self.session.commit()
+
+        status_ids = {}
+        for ticket_status in TicketStatus:
+            response = self.create(status=ticket_status.value)
+            self.assertEqual(response.status_code, 201, response.text)
+            status_ids[ticket_status.value] = response.json()["id"]
+        second = self.create(location_id=second_location_id)
+        other = self.create(location_id=other_location_id, status="in_progress")
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(other.status_code, 201, other.text)
+        second_id, other_id = second.json()["id"], other.json()["id"]
+        second_district_id = second.json()["location"]["district_id"]
+        other_district_id = other.json()["location"]["district_id"]
+        cases = [
+            ({"city_id": self.city_id}, [*status_ids.values(), second_id]),
+            ({"city_id": other_city_id}, [other_id]),
+            ({"district_id": self.district_id}, list(status_ids.values())),
+            ({"district_id": second_district_id}, [second_id]),
+            ({"district_id": other_district_id}, [other_id]),
+            ({"status": "planned"}, [status_ids["planned"], second_id]),
+            ({"status": "in_progress"}, [status_ids["in_progress"], other_id]),
+            ({"status": "completed"}, [status_ids["completed"]]),
+            ({"status": "wont_fix"}, [status_ids["wont_fix"]]),
+            ({"city_id": self.city_id, "status": "in_progress"}, [status_ids["in_progress"]]),
+            (
+                {"city_id": self.city_id, "district_id": self.district_id, "status": "planned"},
+                [status_ids["planned"]],
+            ),
+            ({"city_id": other_city_id, "district_id": self.district_id}, []),
+            ({"city_id": 2_147_483_647}, []),
+            ({"district_id": 2_147_483_647}, []),
+            ({"status": "planned", "limit": 1, "offset": 1}, [second_id]),
+        ]
+        for params, expected_ids in cases:
+            with self.subTest(params=params):
+                response = self.client.get("/api/v1/tickets", params=params)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([ticket["id"] for ticket in response.json()], expected_ids)
+
+    def test_list_pagination_has_stable_order_and_bounded_default_page(self):
+        ids = []
+        for index in range(23):
+            response = self.create(title=f"Заявка {index}")
+            self.assertEqual(response.status_code, 201, response.text)
+            ids.append(response.json()["id"])
+        cases = [
+            ({}, ids[:20]),
+            ({"limit": 2, "offset": 1}, ids[1:3]),
+            ({"offset": 20}, ids[20:]),
+            ({"offset": len(ids)}, []),
+            ({"offset": 2_147_483_647}, []),
+            ({"limit": 100}, ids),
+        ]
+        for params, expected_ids in cases:
+            with self.subTest(params=params):
+                response = self.client.get("/api/v1/tickets", params=params)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual([ticket["id"] for ticket in response.json()], expected_ids)
+
+    def test_invalid_list_parameters_return_422(self):
+        invalid_values = {
+            "status": ["unknown", "", "planned' OR 1=1 --"],
+            "city_id": [0, -1, 2_147_483_648, "text", "1.5", ""],
+            "district_id": [0, -1, 2_147_483_648, "text", "1.5", ""],
+            "limit": [0, -1, 101, "text", "1.5", ""],
+            "offset": [-1, 2_147_483_648, "text", "1.5", ""],
+        }
+        for field, values in invalid_values.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    response = self.client.get("/api/v1/tickets", params={field: value})
+                    self.assertEqual(response.status_code, 422, response.text)
+                    self.assertEqual(response.json()["detail"][0]["loc"], ["query", field])
+
+    def test_list_status_is_bound_even_without_http_validation(self):
+        response = self.create()
+        self.assertEqual(response.status_code, 201, response.text)
+        with Session(bind=self.connection, join_transaction_mode="create_savepoint") as session:
+            filters = {"city_id": None, "district_id": None, "limit": 100, "offset": 0}
+            normal = repository.find_tickets(session, status="planned", **filters)
+            self.assertEqual([row["id"] for row in normal], [response.json()["id"]])
+            # Bypass the HTTP enum check to exercise actual PostgreSQL parameter binding.
+            for payload in ("planned' OR 1=1 --", "' OR '1'='1", "planned'; SELECT 1 --"):
+                with self.subTest(payload=payload):
+                    self.assertEqual(
+                        repository.find_tickets(session, status=payload, **filters), []
+                    )
+        self.assertEqual(self.count_tickets(), 1)
+
+    def test_openapi_exposes_three_ticket_operations(self):
         schema = self.client.get("/openapi.json").json()
         paths = schema["paths"]
         self.assertEqual(set(paths), {"/health", "/api/v1/tickets", "/api/v1/tickets/{id}"})
-        self.assertEqual(set(paths["/api/v1/tickets"]), {"post"})
+        self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
+        operation = paths["/api/v1/tickets"]["get"]
+        parameters = {param["name"]: param for param in operation["parameters"]}
+        self.assertEqual(set(parameters), {"status", "city_id", "district_id", "limit", "offset"})
+        self.assertTrue(all(param["in"] == "query" for param in parameters.values()))
+        self.assertEqual(parameters["limit"]["schema"]["default"], 20)
+        self.assertEqual(parameters["offset"]["schema"]["default"], 0)
+        self.assertEqual(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["type"], "array"
+        )
         location_schema = schema["components"]["schemas"]["LocationRead"]
         for field, field_type in (("district_id", "integer"), ("district", "string")):
             self.assertIn(field, location_schema["required"])
