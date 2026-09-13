@@ -1,9 +1,11 @@
 """Create and retrieve tickets without HTTP-specific exceptions."""
 
+from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
 from app.modules.locations.schemas import LocationRead
 from app.modules.tickets import repository
+from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
 
 
@@ -19,6 +21,31 @@ def get_ticket(session: Session, ticket_id: int) -> TicketRead:
     details = repository.find_ticket(session, ticket_id)
     if details is None:
         raise TicketNotFoundError
+    return _ticket_from_row(details)
+
+
+def list_tickets(
+    session: Session,
+    *,
+    status: TicketStatus | None,
+    city_id: int | None,
+    district_id: int | None,
+    limit: int,
+    offset: int,
+) -> list[TicketRead]:
+    rows = repository.find_tickets(
+        session,
+        status=status.value if status is not None else None,
+        city_id=city_id,
+        district_id=district_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [_ticket_from_row(row) for row in rows]
+
+
+def _ticket_from_row(details: RowMapping) -> TicketRead:
+    """Build the same full response from either a single row or a row in a page."""
     return TicketRead(
         **TicketFields.model_validate(details).model_dump(),
         id=details["id"],
