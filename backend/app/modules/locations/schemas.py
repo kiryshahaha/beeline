@@ -7,6 +7,8 @@ class LocationRead(BaseModel):
     id: int
     city_id: int
     city: str
+    district_id: int
+    district: str
     street_id: int
     street: str
     building_id: int
@@ -23,7 +25,7 @@ class LocationRead(BaseModel):
     @property
     def address(self) -> str:
         """A display string; the database still stores separate directory references."""
-        parts = [self.city, self.street, f"д. {self.building_number}"]
+        parts = [self.city, self.district, self.street, f"д. {self.building_number}"]
         if self.block is not None:
             parts.append(self.block)
         if self.entrance_number is not None:

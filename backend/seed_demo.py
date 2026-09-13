@@ -23,6 +23,7 @@ CITY_NAME = "Санкт-Петербург"
 
 @dataclass(frozen=True, kw_only=True)
 class DemoVisit:
+    district: str
     street: str
     building: str
     latitude: str
@@ -40,7 +41,7 @@ class DemoVisit:
 
     @property
     def address(self) -> str:
-        parts = [CITY_NAME, self.street, f"д. {self.building}"]
+        parts = [CITY_NAME, self.district, self.street, f"д. {self.building}"]
         if self.block is not None:
             parts.append(self.block)
         if self.entrance is not None:
@@ -52,11 +53,12 @@ class DemoVisit:
         return ", ".join(parts)
 
 
-# Buildings, blocks and map coordinates checked on 2026-09-13.
+# Buildings, districts, blocks and map coordinates checked on 2026-09-13.
 # Entrance/floor/apartment assignments and all jobs are fictional by user agreement.
 # Repeated apartments share the building's map point, not a surveyed entrance position.
 DEMO_VISITS = (
     DemoVisit(
+        district="Невский район",
         street="Искровский проспект",
         building="4",
         block="корпус 2",
@@ -73,6 +75,7 @@ DEMO_VISITS = (
         duration_minutes=60,
     ),
     DemoVisit(
+        district="Невский район",
         street="Искровский проспект",
         building="4",
         block="корпус 2",
@@ -89,6 +92,7 @@ DEMO_VISITS = (
         duration_minutes=45,
     ),
     DemoVisit(
+        district="Невский район",
         street="Искровский проспект",
         building="4",
         block="корпус 2",
@@ -105,6 +109,7 @@ DEMO_VISITS = (
         duration_minutes=30,
     ),
     DemoVisit(
+        district="Невский район",
         street="Искровский проспект",
         building="3",
         block="корпус 2",
@@ -121,6 +126,7 @@ DEMO_VISITS = (
         duration_minutes=60,
     ),
     DemoVisit(
+        district="Невский район",
         street="улица Дыбенко",
         building="8",
         block="корпус 2",
@@ -137,6 +143,7 @@ DEMO_VISITS = (
         duration_minutes=30,
     ),
     DemoVisit(
+        district="Невский район",
         street="улица Дыбенко",
         building="27",
         block="корпус 1",
@@ -153,6 +160,7 @@ DEMO_VISITS = (
         duration_minutes=90,
     ),
     DemoVisit(
+        district="Приморский район",
         street="Коломяжский проспект",
         building="34",
         block="корпус 2",
@@ -169,6 +177,7 @@ DEMO_VISITS = (
         duration_minutes=45,
     ),
     DemoVisit(
+        district="Красногвардейский район",
         street="проспект Энергетиков",
         building="54",
         block="корпус 2",
@@ -215,6 +224,15 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     )
     results = []
     for visit in DEMO_VISITS:
+        district_id = get_or_create_id(
+            session,
+            """
+            SELECT id FROM districts
+            WHERE city_id = :city_id AND lower(name) = lower(:name)
+            """,
+            "INSERT INTO districts (city_id, name) VALUES (:city_id, :name) RETURNING id",
+            {"city_id": city_id, "name": visit.district},
+        )
         street_id = get_or_create_id(
             session,
             """
@@ -232,11 +250,26 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
               AND lower(block) IS NOT DISTINCT FROM lower(CAST(:block AS text))
             """,
             """
-            INSERT INTO buildings (street_id, number, block)
-            VALUES (:street_id, :number, :block) RETURNING id
+            INSERT INTO buildings (city_id, street_id, district_id, number, block)
+            VALUES (:city_id, :street_id, :district_id, :number, :block) RETURNING id
             """,
-            {"street_id": street_id, "number": visit.building, "block": visit.block},
+            {
+                "city_id": city_id,
+                "street_id": street_id,
+                "district_id": district_id,
+                "number": visit.building,
+                "block": visit.block,
+            },
         )
+        existing_district_id = session.execute(
+            text("SELECT district_id FROM buildings WHERE id = :building_id FOR UPDATE"),
+            {"building_id": building_id},
+        ).scalar_one()
+        if existing_district_id != district_id:
+            raise RuntimeError(
+                f"У building_id={building_id} уже другой район. "
+                "Заполнение отменено: проверьте этот дом вручную."
+            )
         entrance_id = None
         if visit.entrance is not None:
             entrance_id = get_or_create_id(

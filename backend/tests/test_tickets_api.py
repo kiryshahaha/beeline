@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Building, City, Entrance, Location, Street, Ticket
+from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.db.session import get_session
 from app.main import app
 from app.modules.tickets.enums import TicketStatus
@@ -18,8 +18,18 @@ class TicketsApiTests(DatabaseTestCase):
     def setUp(self):
         super().setUp()
         city = self.save(City(name="Санкт-Петербург"))
+        district = self.save(District(city_id=city.id, name="Невский район"))
+        self.district_id = district.id
         street = self.save(Street(city_id=city.id, name="Тестовая улица"))
-        building = self.save(Building(street_id=street.id, number="12А", block="корпус 2"))
+        building = self.save(
+            Building(
+                city_id=city.id,
+                street_id=street.id,
+                district_id=district.id,
+                number="12А",
+                block="корпус 2",
+            )
+        )
         entrance = self.save(Entrance(building_id=building.id, number="3"))
         self.location = self.save(
             Location(
@@ -78,12 +88,15 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(created["location_id"], self.location_id)
         location = created["location"]
         self.assertEqual(location["id"], self.location_id)
+        self.assertEqual(location["district_id"], self.district_id)
+        self.assertEqual(location["district"], "Невский район")
         self.assertEqual(location["apartment"], "24Б")
         self.assertEqual(location["latitude"], 59.94)
         self.assertEqual(location["longitude"], 30.32)
         self.assertEqual(
             location["address"],
-            ("Санкт-Петербург, Тестовая улица, д. 12А, корпус 2, подъезд 3, этаж 5, кв./пом. 24Б"),
+            "Санкт-Петербург, Невский район, Тестовая улица, д. 12А, корпус 2, "
+            "подъезд 3, этаж 5, кв./пом. 24Б",
         )
         fetched = self.client.get(response.headers["Location"])
         self.assertEqual(fetched.status_code, 200)
@@ -107,6 +120,25 @@ class TicketsApiTests(DatabaseTestCase):
         response = self.create(actual_duration_minutes=0)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["actual_duration_minutes"], 0)
+
+    def test_get_reflects_district_changed_in_address_directory(self):
+        response = self.create()
+        self.assertEqual(response.status_code, 201, response.text)
+        building = self.session.get(Building, self.location.building_id)
+        district = self.save(District(city_id=building.city_id, name="Тестовый район"))
+        building.district_id = district.id
+        district_id = district.id
+        self.session.commit()
+        fetched = self.client.get(response.headers["Location"])
+        self.assertEqual(fetched.status_code, 200, fetched.text)
+        location = fetched.json()["location"]
+        self.assertEqual(location["district_id"], district_id)
+        self.assertEqual(location["district"], "Тестовый район")
+        self.assertEqual(
+            location["address"],
+            "Санкт-Петербург, Тестовый район, Тестовая улица, д. 12А, корпус 2, "
+            "подъезд 3, этаж 5, кв./пом. 24Б",
+        )
 
     def test_sql_like_text_is_returned_unchanged(self):
         values = {
@@ -238,10 +270,18 @@ class TicketsApiTests(DatabaseTestCase):
             "longitude",
         ):
             self.assertIsNone(location[field])
-        self.assertEqual(location["address"], "Санкт-Петербург, Тестовая улица, д. 12А, корпус 2")
+        self.assertEqual(
+            location["address"], "Санкт-Петербург, Невский район, Тестовая улица, д. 12А, корпус 2"
+        )
 
     def test_openapi_exposes_only_two_ticket_operations(self):
-        paths = self.client.get("/openapi.json").json()["paths"]
+        schema = self.client.get("/openapi.json").json()
+        paths = schema["paths"]
         self.assertEqual(set(paths), {"/health", "/api/v1/tickets", "/api/v1/tickets/{id}"})
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
+        location_schema = schema["components"]["schemas"]["LocationRead"]
+        for field, field_type in (("district_id", "integer"), ("district", "string")):
+            self.assertIn(field, location_schema["required"])
+            self.assertEqual(location_schema["properties"][field]["type"], field_type)
+            self.assertNotIn("anyOf", location_schema["properties"][field])

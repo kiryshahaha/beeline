@@ -40,6 +40,7 @@ def find_ticket(session: Session, ticket_id: int) -> RowMapping | None:
                 t.estimated_duration_minutes, t.actual_duration_minutes,
                 t.created_at, t.updated_at,
                 c.id AS city_id, c.name AS city,
+                d.id AS district_id, d.name AS district,
                 s.id AS street_id, s.name AS street,
                 b.id AS building_id, b.number AS building_number, b.block,
                 l.entrance_id, e.number AS entrance_number,
@@ -49,6 +50,7 @@ def find_ticket(session: Session, ticket_id: int) -> RowMapping | None:
             JOIN buildings AS b ON b.id = l.building_id
             JOIN streets AS s ON s.id = b.street_id
             JOIN cities AS c ON c.id = s.city_id
+            JOIN districts AS d ON d.id = b.district_id
             LEFT JOIN entrances AS e ON e.id = l.entrance_id
             WHERE t.id = :ticket_id
         """),

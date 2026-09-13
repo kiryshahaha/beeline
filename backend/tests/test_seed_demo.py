@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from sqlalchemy import func, select
 
-from app.db.models import Building, City, Entrance, Location, Street, Ticket
+from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.service import get_ticket
 from seed_demo import DEMO_VISITS, MOSCOW_TIME, seed_data
@@ -26,6 +26,7 @@ class SeedDemoTests(DatabaseTestCase):
     def test_complete_data_set_includes_blocks_entrances_and_apartments(self):
         results = seed_data(self.session, self.visit_date)
         self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 8])
+        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 3)
         self.assertTrue(all(result.created for result in results))
         for result, visit in zip(results, DEMO_VISITS, strict=True):
             ticket = self.session.get(Ticket, result.ticket_id)
@@ -39,6 +40,10 @@ class SeedDemoTests(DatabaseTestCase):
             self.assertEqual(entrance.number, visit.entrance)
             self.assertEqual(entrance.building_id, building.id)
             self.assertEqual(building.block, visit.block)
+            district = self.session.get(District, building.district_id)
+            self.assertEqual(district.name, visit.district)
+            self.assertEqual(district.city_id, building.city_id)
+            self.assertEqual(get_ticket(self.session, ticket.id).location.district_id, district.id)
             self.assertEqual(result.address, visit.address)
             self.assertEqual(get_ticket(self.session, ticket.id).location.address, visit.address)
             local_start = ticket.visit_window_start.astimezone(MOSCOW_TIME)
@@ -122,10 +127,15 @@ class SeedDemoTests(DatabaseTestCase):
         city = City(name="санкт-петербург")
         self.session.add(city)
         self.session.flush()
+        district = District(city_id=city.id, name=DEMO_VISITS[0].district.upper())
+        self.session.add(district)
+        self.session.flush()
         street = Street(city_id=city.id, name=DEMO_VISITS[0].street.upper())
         self.session.add(street)
         self.session.flush()
         building = Building(
+            city_id=city.id,
+            district_id=district.id,
             street_id=street.id,
             number=DEMO_VISITS[0].building,
             block=DEMO_VISITS[0].block.upper(),
@@ -147,6 +157,28 @@ class SeedDemoTests(DatabaseTestCase):
         self.assertEqual(location.latitude, Decimal(DEMO_VISITS[0].latitude))
         self.assertEqual(location.floor, DEMO_VISITS[0].floor)
         self.assertEqual(city.name, "санкт-петербург")
+        self.session.refresh(building)
+        self.assertEqual(building.district_id, district.id)
+        self.assertEqual(self.session.scalar(select(func.count()).select_from(District)), 3)
+
+    def test_conflicting_district_rolls_back_new_tickets(self):
+        original = seed_data(self.session, self.visit_date)
+        first_location = self.session.get(Location, original[0].location_id)
+        last_location = self.session.get(Location, original[-1].location_id)
+        first = self.session.get(Building, first_location.building_id)
+        last = self.session.get(Building, last_location.building_id)
+        last.district_id = first.district_id
+        conflicting_id = last.district_id
+        for result in original[:-1]:
+            self.session.delete(self.session.get(Ticket, result.ticket_id))
+        self.session.flush()
+        with self.assertRaisesRegex(RuntimeError, "другой район"):
+            with self.session.begin_nested():
+                seed_data(self.session, self.visit_date)
+        self.session.expire_all()
+        self.assertEqual(first.district_id, conflicting_id)
+        self.assertEqual(last.district_id, conflicting_id)
+        self.assertEqual(self.counts(), [1, 4, 6, 6, 7, 1])
 
     def test_coordinate_conflict_rolls_back_the_whole_attempt(self):
         results = seed_data(self.session, self.visit_date)

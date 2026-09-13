@@ -3,10 +3,10 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.db.models import Building, City, Entrance, Location, Street, Ticket
+from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
 from app.modules.tickets.enums import TicketStatus
 from tests.support import DatabaseTestCase
 
@@ -16,8 +16,16 @@ class DatabaseTests(DatabaseTestCase):
         super().setUp()
 
         self.city = self.save(City(name="Санкт-Петербург"))
+        self.district = self.save(District(city_id=self.city.id, name="Невский район"))
         self.street = self.save(Street(city_id=self.city.id, name="улица Ленина"))
-        self.building = self.save(Building(street_id=self.street.id, number="12А"))
+        self.building = self.save(
+            Building(
+                city_id=self.city.id,
+                district_id=self.district.id,
+                street_id=self.street.id,
+                number="12А",
+            )
+        )
         self.entrance = self.save(Entrance(building_id=self.building.id, number="1"))
         self.location = self.save(
             Location(
@@ -79,18 +87,118 @@ class DatabaseTests(DatabaseTestCase):
         other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
         self.assertNotEqual(other_street.id, self.street.id)
 
+    def test_district_duplicate_is_case_insensitive_and_scoped_to_city(self):
+        district = self.district
+        self.rejected(District(city_id=self.city.id, name="НЕВСКИЙ РАЙОН"))
+        other_city = self.save(City(name="Другой город"))
+        other = self.save(District(city_id=other_city.id, name="Невский район"))
+        self.assertNotEqual(district.id, other.id)
+        for name in ("", " ", " Район", "Район "):
+            with self.subTest(name=name):
+                self.rejected(District(city_id=self.city.id, name=name))
+
+    def test_building_rejects_district_or_street_from_another_city(self):
+        other_city = self.save(City(name="Другой город"))
+        district = self.save(District(city_id=other_city.id, name="Центральный район"))
+        other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
+        for values in (
+            {"street_id": self.street.id, "district_id": district.id},
+            {"street_id": other_street.id, "district_id": self.district.id},
+        ):
+            with self.subTest(values=values):
+                self.rejected(Building(city_id=self.city.id, number="100", **values))
+        # Updating an existing row through literal SQL must enforce the same rule.
+        with self.assertRaises(IntegrityError):
+            with self.session.begin_nested():
+                self.session.execute(
+                    text("UPDATE buildings SET district_id = :district_id WHERE id = :id"),
+                    {"district_id": district.id, "id": self.building.id},
+                )
+
+    def test_one_street_can_have_buildings_in_different_districts(self):
+        first = self.save(District(city_id=self.city.id, name="Первый район"))
+        second = self.save(District(city_id=self.city.id, name="Второй район"))
+        self.building.district_id = first.id
+        other = self.save(
+            Building(
+                city_id=self.city.id, street_id=self.street.id, district_id=second.id, number="14"
+            )
+        )
+        self.assertEqual(other.street_id, self.building.street_id)
+        self.assertNotEqual(other.district_id, self.building.district_id)
+        other_city = self.save(City(name="Другой город"))
+        for query in (
+            "DELETE FROM districts WHERE id = :id",
+            "UPDATE districts SET city_id = :city_id WHERE id = :id",
+        ):
+            with self.subTest(query=query):
+                with self.assertRaises(IntegrityError):
+                    with self.session.begin_nested():
+                        self.session.execute(
+                            text(query), {"id": first.id, "city_id": other_city.id}
+                        )
+
     def test_building_without_block_cannot_be_duplicated(self):
-        self.rejected(Building(street_id=self.street.id, number="12а"))
+        self.rejected(
+            Building(
+                city_id=self.city.id,
+                district_id=self.district.id,
+                street_id=self.street.id,
+                number="12а",
+            )
+        )
+
+    def test_building_district_cannot_be_omitted_null_or_cleared(self):
+        statements = (
+            """
+            INSERT INTO buildings (city_id, street_id, number)
+            VALUES (:city_id, :street_id, '100')
+            """,
+            """
+            INSERT INTO buildings (city_id, street_id, district_id, number)
+            VALUES (:city_id, :street_id, NULL, '100')
+            """,
+            "UPDATE buildings SET district_id = NULL WHERE id = :id",
+        )
+        for statement in statements:
+            with self.subTest(statement=statement):
+                with self.assertRaises(IntegrityError) as raised:
+                    with self.session.begin_nested():
+                        self.session.execute(
+                            text(statement),
+                            {
+                                "city_id": self.city.id,
+                                "street_id": self.street.id,
+                                "id": self.building.id,
+                            },
+                        )
+                self.assertEqual(raised.exception.orig.sqlstate, "23502")
+                self.assertEqual(raised.exception.orig.diag.column_name, "district_id")
+        self.session.refresh(self.building)
+        self.assertEqual(self.building.district_id, self.district.id)
 
     def test_buildings_with_different_blocks_are_distinct(self):
         other_building = self.save(
-            Building(street_id=self.street.id, number="12А", block="корпус 2")
+            Building(
+                city_id=self.city.id,
+                district_id=self.district.id,
+                street_id=self.street.id,
+                number="12А",
+                block="корпус 2",
+            )
         )
         self.assertNotEqual(other_building.id, self.building.id)
 
     def test_entrance_duplicate_is_scoped_to_building(self):
         self.rejected(Entrance(building_id=self.building.id, number="1"))
-        other_building = self.save(Building(street_id=self.street.id, number="14"))
+        other_building = self.save(
+            Building(
+                city_id=self.city.id,
+                district_id=self.district.id,
+                street_id=self.street.id,
+                number="14",
+            )
+        )
         other_entrance = self.save(Entrance(building_id=other_building.id, number="1"))
         self.assertNotEqual(other_entrance.id, self.entrance.id)
 
@@ -106,7 +214,14 @@ class DatabaseTests(DatabaseTestCase):
         self.rejected(Location(building_id=self.building.id))
 
     def test_entrance_from_another_building_is_rejected(self):
-        other_building = self.save(Building(street_id=self.street.id, number="14"))
+        other_building = self.save(
+            Building(
+                city_id=self.city.id,
+                district_id=self.district.id,
+                street_id=self.street.id,
+                number="14",
+            )
+        )
         self.rejected(Location(building_id=other_building.id, entrance_id=self.entrance.id))
 
     def test_invalid_coordinate_pairs_are_rejected(self):
@@ -170,7 +285,15 @@ class DatabaseTests(DatabaseTestCase):
         self.save(self.ticket())
         other_city = self.save(City(name="Москва"))
         other_street = self.save(Street(city_id=other_city.id, name="улица Ленина"))
-        other_building = self.save(Building(street_id=other_street.id, number="12А"))
+        other_district = self.save(District(city_id=other_city.id, name="Тестовый район"))
+        other_building = self.save(
+            Building(
+                city_id=other_city.id,
+                district_id=other_district.id,
+                street_id=other_street.id,
+                number="12А",
+            )
+        )
         other_location = self.save(Location(building_id=other_building.id, apartment="24Б"))
         self.save(self.ticket(location_id=other_location.id, status=TicketStatus.COMPLETED))
         report = self.session.execute(

@@ -28,6 +28,8 @@ def get_ticket(session: Session, ticket_id: int) -> TicketRead:
             id=details["location_id"],
             city_id=details["city_id"],
             city=details["city"],
+            district_id=details["district_id"],
+            district=details["district"],
             street_id=details["street_id"],
             street=details["street"],
             building_id=details["building_id"],
