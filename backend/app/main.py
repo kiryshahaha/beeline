@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.modules.locations.router import router as locations_router
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.schemas import (
     LOGIN_REQUEST_EXAMPLE,
@@ -27,6 +28,7 @@ app = FastAPI(
     version="0.2.0",
 )
 
+app.include_router(locations_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
