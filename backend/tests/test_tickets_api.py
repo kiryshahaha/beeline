@@ -401,15 +401,19 @@ class TicketsApiTests(DatabaseTestCase):
                     )
         self.assertEqual(self.count_tickets(), 1)
 
-    def test_openapi_exposes_three_ticket_operations(self):
+    def test_openapi_exposes_ticket_operations(self):
         schema = self.client.get("/openapi.json").json()
         paths = schema["paths"]
-        self.assertEqual(set(paths), {"/health", "/api/v1/tickets", "/api/v1/tickets/{id}"})
-        self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
-        self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
+        for endpoint in ("/health", "/api/v1/tickets", "/api/v1/tickets/{id}", "/api/v1/tickets/{id}/assign"):
+            self.assertIn(endpoint, paths)
+        self.assertIn("post", paths["/api/v1/tickets"])
+        self.assertIn("get", paths["/api/v1/tickets"])
+        self.assertIn("get", paths["/api/v1/tickets/{id}"])
+        self.assertIn("patch", paths["/api/v1/tickets/{id}"])
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}
-        self.assertEqual(set(parameters), {"status", "city_id", "district_id", "limit", "offset"})
+        for param in ("status", "city_id", "district_id", "worker_id", "unassigned", "limit", "offset"):
+            self.assertIn(param, parameters)
         self.assertTrue(all(param["in"] == "query" for param in parameters.values()))
         self.assertEqual(parameters["limit"]["schema"]["default"], 20)
         self.assertEqual(parameters["offset"]["schema"]["default"], 0)
@@ -421,3 +425,82 @@ class TicketsApiTests(DatabaseTestCase):
             self.assertIn(field, location_schema["required"])
             self.assertEqual(location_schema["properties"][field]["type"], field_type)
             self.assertNotIn("anyOf", location_schema["properties"][field])
+
+    def test_ticket_worker_assignment_patch_and_filter(self):
+        from datetime import time
+        from app.modules.users.models import User, Worker
+        from app.modules.users.enums import UserRole
+
+        # Create worker users
+        user1 = self.save(
+            User(
+                name="Иван",
+                surname="Иванов",
+                username="worker_test_1",
+                password_hash="argon2_hash",
+                role=UserRole.WORKER,
+            )
+        )
+        self.save(Worker(user_id=user1.id, workshift_start=time(8, 0), workshift_end=time(17, 0)))
+
+        user2 = self.save(
+            User(
+                name="Петр",
+                surname="Петров",
+                username="worker_test_2",
+                password_hash="argon2_hash",
+                role=UserRole.WORKER,
+            )
+        )
+        self.save(Worker(user_id=user2.id, workshift_start=time(9, 0), workshift_end=time(18, 0)))
+        self.session.commit()
+
+        # 1. Create ticket with worker1
+        res = self.create(title="Монтаж оборудования", worker_ids=[user1.id])
+        self.assertEqual(res.status_code, 201, res.text)
+        created = res.json()
+        self.assertEqual(len(created["assignees"]), 1)
+        self.assertEqual(created["assignees"][0]["id"], user1.id)
+        self.assertEqual(created["assignees"][0]["username"], "worker_test_1")
+        ticket_id = created["id"]
+
+        # 2. Assign second worker via POST /api/v1/tickets/{id}/assign
+        res_assign = self.client.post(
+            f"/api/v1/tickets/{ticket_id}/assign",
+            json={"worker_ids": [user1.id, user2.id]},
+        )
+        self.assertEqual(res_assign.status_code, 200, res_assign.text)
+        assign_data = res_assign.json()
+        self.assertEqual(len(assign_data["assignees"]), 2)
+        assignee_ids = {a["id"] for a in assign_data["assignees"]}
+        self.assertEqual(assignee_ids, {user1.id, user2.id})
+
+        # 3. Create unassigned ticket
+        res_unassigned = self.create(title="Неназначенная заявка", worker_ids=[])
+        self.assertEqual(res_unassigned.status_code, 201)
+        unassigned_id = res_unassigned.json()["id"]
+
+        # 4. Filter by worker_id
+        res_filter_w1 = self.client.get("/api/v1/tickets", params={"worker_id": user1.id})
+        self.assertEqual(res_filter_w1.status_code, 200)
+        filtered_ids = [t["id"] for t in res_filter_w1.json()]
+        self.assertIn(ticket_id, filtered_ids)
+        self.assertNotIn(unassigned_id, filtered_ids)
+
+        # 5. Filter by unassigned=true
+        res_filter_unassigned = self.client.get("/api/v1/tickets", params={"unassigned": True})
+        self.assertEqual(res_filter_unassigned.status_code, 200)
+        unassigned_ids = [t["id"] for t in res_filter_unassigned.json()]
+        self.assertIn(unassigned_id, unassigned_ids)
+        self.assertNotIn(ticket_id, unassigned_ids)
+
+        # 6. Update status and duration via PATCH
+        res_patch = self.client.patch(
+            f"/api/v1/tickets/{ticket_id}",
+            json={"status": "in_progress", "actual_duration_minutes": 45},
+        )
+        self.assertEqual(res_patch.status_code, 200, res_patch.text)
+        patched = res_patch.json()
+        self.assertEqual(patched["status"], "in_progress")
+        self.assertEqual(patched["actual_duration_minutes"], 45)
+

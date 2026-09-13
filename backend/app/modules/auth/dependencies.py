@@ -53,3 +53,25 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[UserRead], UserRead]:
         return current_user
 
     return check_role
+
+
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login", auto_error=False
+)
+
+
+def get_optional_current_user(
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+    session: DatabaseSession,
+) -> UserRead | None:
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return None
+        user_id = int(payload["sub"])
+        return users_service.get_user(session, user_id)
+    except Exception:
+        return None
+

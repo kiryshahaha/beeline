@@ -320,6 +320,16 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     # Serialize copies of this script; the lock is released on commit or rollback.
     session.execute(text("SELECT pg_advisory_xact_lock(20260912, 1)"))
     seed_users_and_skills(session)
+    observer_id = session.execute(
+        text("SELECT id FROM users WHERE username = 'demo_observer'")
+    ).scalar_one()
+    worker_1_id = session.execute(
+        text("SELECT id FROM users WHERE username = 'demo_worker_1'")
+    ).scalar_one()
+    worker_2_id = session.execute(
+        text("SELECT id FROM users WHERE username = 'demo_worker_2'")
+    ).scalar_one()
+
     city_id = get_or_create_id(
         session,
         "SELECT id FROM cities WHERE lower(name) = lower(:name)",
@@ -327,7 +337,7 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
         {"name": CITY_NAME},
     )
     results = []
-    for visit in DEMO_VISITS:
+    for index, visit in enumerate(DEMO_VISITS):
         district_id = get_or_create_id(
             session,
             """
@@ -465,10 +475,12 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 text("""
                     INSERT INTO tickets (
                         location_id, title, description, work_type,
-                        visit_window_start, visit_window_end, estimated_duration_minutes
+                        visit_window_start, visit_window_end, estimated_duration_minutes,
+                        created_by_id
                     ) VALUES (
                         :location_id, :title, :description, :work_type,
-                        :visit_window_start, :visit_window_end, :estimated_duration_minutes
+                        :visit_window_start, :visit_window_end, :estimated_duration_minutes,
+                        :created_by_id
                     )
                     RETURNING id
                 """),
@@ -488,8 +500,49 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                         visit_date, time(visit.end_hour), MOSCOW_TIME
                     ),
                     "estimated_duration_minutes": visit.duration_minutes,
+                    "created_by_id": observer_id,
                 },
             ).scalar_one()
+        else:
+            session.execute(
+                text("""
+                    UPDATE tickets SET created_by_id = :created_by_id
+                    WHERE id = :ticket_id AND created_by_id IS NULL
+                """),
+                {"created_by_id": observer_id, "ticket_id": ticket_id},
+            )
+
+        # Assign workers according to plan:
+        # visits 0, 1, 2 -> worker_1; visits 3, 4 -> worker_2; visit 5 -> worker_1 and worker_2
+        if index in (0, 1, 2):
+            session.execute(
+                text("""
+                    INSERT INTO ticket_assignments (ticket_id, worker_id)
+                    VALUES (:ticket_id, :worker_id)
+                    ON CONFLICT DO NOTHING
+                """),
+                {"ticket_id": ticket_id, "worker_id": worker_1_id},
+            )
+        elif index in (3, 4):
+            session.execute(
+                text("""
+                    INSERT INTO ticket_assignments (ticket_id, worker_id)
+                    VALUES (:ticket_id, :worker_id)
+                    ON CONFLICT DO NOTHING
+                """),
+                {"ticket_id": ticket_id, "worker_id": worker_2_id},
+            )
+        elif index == 5:
+            for w_id in (worker_1_id, worker_2_id):
+                session.execute(
+                    text("""
+                        INSERT INTO ticket_assignments (ticket_id, worker_id)
+                        VALUES (:ticket_id, :worker_id)
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"ticket_id": ticket_id, "worker_id": w_id},
+                )
+
         results.append(
             SeedResult(
                 ticket_id=ticket_id,

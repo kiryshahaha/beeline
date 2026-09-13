@@ -1,5 +1,6 @@
 """Ticket request/response contracts; validation mirrors the agreed database constraints."""
 
+from datetime import time
 from typing import Annotated, Self
 
 from pydantic import (
@@ -14,6 +15,7 @@ from pydantic import (
 
 from app.modules.locations.schemas import LocationRead
 from app.modules.tickets.enums import TicketStatus
+from app.modules.users.enums import UserRole
 
 PositiveInt32 = Annotated[int, Field(strict=True, ge=1, le=2_147_483_647)]
 NonNegativeInt32 = Annotated[int, Field(strict=True, ge=0, le=2_147_483_647)]
@@ -31,11 +33,55 @@ TICKET_CREATE_EXAMPLE = {
     "planned_end_at": None,
     "estimated_duration_minutes": 60,
     "actual_duration_minutes": None,
+    "worker_ids": [2],
+}
+
+TICKET_UPDATE_EXAMPLE = {
+    "status": "in_progress",
+    "actual_duration_minutes": 50,
+    "worker_ids": [2, 3],
+}
+
+TICKET_ASSIGN_WORKERS_EXAMPLE = {
+    "worker_ids": [2, 3],
 }
 
 TICKET_READ_EXAMPLE = {
-    **TICKET_CREATE_EXAMPLE,
     "id": 1,
+    "location_id": 1,
+    "title": "Настроить Wi-Fi",
+    "description": "Учебный пример заявки",
+    "work_type": "Настройка сети",
+    "status": "planned",
+    "visit_window_start": "2026-09-14T10:00:00+03:00",
+    "visit_window_end": "2026-09-14T14:00:00+03:00",
+    "planned_start_at": None,
+    "planned_end_at": None,
+    "estimated_duration_minutes": 60,
+    "actual_duration_minutes": None,
+    "created_by_id": 1,
+    "created_by": {
+        "id": 1,
+        "name": "Иван",
+        "surname": "Иванов",
+        "lastname": "Иванович",
+        "username": "demo_observer",
+        "role": "observer",
+    },
+    "assignees": [
+        {
+            "id": 2,
+            "name": "Дмитрий",
+            "surname": "Кузнецов",
+            "lastname": "Сергеевич",
+            "username": "demo_worker_1",
+            "role": "worker",
+            "workshift_start": "08:00:00",
+            "workshift_end": "17:00:00",
+            "skills": ["Монтаж ВОЛС", "Подключение абонентов"],
+            "assigned_at": "2026-09-14T09:00:00+03:00",
+        }
+    ],
     "created_at": "2026-09-13T09:00:00+03:00",
     "updated_at": "2026-09-13T09:00:00+03:00",
     "location": {
@@ -61,6 +107,24 @@ TICKET_READ_EXAMPLE = {
         ),
     },
 }
+
+
+class TicketUserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    surname: str
+    lastname: str | None = None
+    username: str
+    role: UserRole
+
+
+class TicketAssigneeRead(TicketUserRead):
+    workshift_start: time
+    workshift_end: time
+    skills: list[str] = Field(default_factory=list)
+    assigned_at: AwareDatetime
 
 
 class TicketFields(BaseModel):
@@ -130,6 +194,69 @@ class TicketCreate(TicketFields):
         extra="forbid", json_schema_extra={"examples": [TICKET_CREATE_EXAMPLE]}
     )
 
+    worker_ids: list[PositiveInt32] = Field(
+        default_factory=list,
+        description="ID исполнителей, назначаемых на заявку при создании.",
+    )
+
+
+class TicketUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [TICKET_UPDATE_EXAMPLE]}
+    )
+
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ] | None = None
+    description: str | None = None
+    work_type: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ] | None = None
+    status: TicketStatus | None = None
+    visit_window_start: AwareDatetime | None = None
+    visit_window_end: AwareDatetime | None = None
+    planned_start_at: AwareDatetime | None = None
+    planned_end_at: AwareDatetime | None = None
+    estimated_duration_minutes: PositiveInt32 | None = None
+    actual_duration_minutes: NonNegativeInt32 | None = None
+    worker_ids: list[PositiveInt32] | None = Field(
+        default=None,
+        description="Новый список ID назначенных исполнителей. Если передан, заменяет текущий список.",
+    )
+
+    @field_validator("title", "description", "work_type")
+    @classmethod
+    def reject_null_character(cls, value: str | None) -> str | None:
+        if value is not None and "\x00" in value:
+            raise ValueError("Текст не может содержать нулевой символ")
+        return value
+
+    @model_validator(mode="after")
+    def validate_intervals(self) -> Self:
+        if (
+            self.visit_window_start is not None
+            and self.visit_window_end is not None
+            and self.visit_window_end <= self.visit_window_start
+        ):
+            raise ValueError("Конец окна визита должен быть позже начала")
+        if (
+            self.planned_start_at is not None
+            and self.planned_end_at is not None
+            and self.planned_end_at <= self.planned_start_at
+        ):
+            raise ValueError("Плановое окончание должно быть позже начала")
+        return self
+
+
+class TicketAssignWorkersRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [TICKET_ASSIGN_WORKERS_EXAMPLE]}
+    )
+
+    worker_ids: list[PositiveInt32] = Field(
+        description="Полный список ID исполнителей, назначенных на заявку."
+    )
+
 
 class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
@@ -138,3 +265,8 @@ class TicketRead(TicketFields):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     location: LocationRead
+    created_by_id: int | None = None
+    created_by: TicketUserRead | None = None
+    assignees: list[TicketAssigneeRead] = Field(
+        default_factory=list, description="Назначенные исполнители"
+    )

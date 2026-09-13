@@ -14,6 +14,7 @@ class OpenApiTests(unittest.TestCase):
             "/health",
             "/api/v1/tickets",
             "/api/v1/tickets/{id}",
+            "/api/v1/tickets/{id}/assign",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",
@@ -24,6 +25,10 @@ class OpenApiTests(unittest.TestCase):
         ]
         for path in expected_paths:
             self.assertIn(path, paths, f"Path {path} missing in OpenAPI schema")
+
+        ticket_by_id_ops = paths["/api/v1/tickets/{id}"]
+        self.assertIn("get", ticket_by_id_ops)
+        self.assertIn("patch", ticket_by_id_ops)
 
         user_by_id_ops = paths["/api/v1/users/{id}"]
         self.assertIn("get", user_by_id_ops)
@@ -37,6 +42,8 @@ class OpenApiTests(unittest.TestCase):
         for schema_name in (
             "TicketCreate",
             "TicketRead",
+            "TicketUpdate",
+            "TicketAssignWorkersRequest",
             "UserCreate",
             "UserUpdate",
             "UserRead",

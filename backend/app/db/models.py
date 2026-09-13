@@ -6,7 +6,7 @@ from app.modules.districts.models import District
 from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
 from app.modules.streets.models import Street
-from app.modules.tickets.models import Ticket
+from app.modules.tickets.models import Ticket, TicketAssignment
 from app.modules.users.models import (
     RefreshToken,
     User,
@@ -24,6 +24,7 @@ __all__ = [
     "RefreshToken",
     "Street",
     "Ticket",
+    "TicketAssignment",
     "User",
     "Worker",
     "WorkerSkill",

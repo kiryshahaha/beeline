@@ -10,7 +10,12 @@ from app.modules.auth.schemas import (
     TOKEN_RESPONSE_EXAMPLE,
 )
 from app.modules.tickets.router import router as tickets_router
-from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
+from app.modules.tickets.schemas import (
+    TICKET_ASSIGN_WORKERS_EXAMPLE,
+    TICKET_CREATE_EXAMPLE,
+    TICKET_READ_EXAMPLE,
+    TICKET_UPDATE_EXAMPLE,
+)
 from app.modules.users.router import router as users_router, skills_router
 from app.modules.users.schemas import (
     USER_CREATE_OBSERVER_EXAMPLE,
@@ -51,6 +56,10 @@ def openapi_with_examples() -> dict:
     schemas = schema["components"]["schemas"]
     schemas["TicketCreate"]["examples"] = [TICKET_CREATE_EXAMPLE]
     schemas["TicketRead"]["examples"] = [TICKET_READ_EXAMPLE]
+    if "TicketUpdate" in schemas:
+        schemas["TicketUpdate"]["examples"] = [TICKET_UPDATE_EXAMPLE]
+    if "TicketAssignWorkersRequest" in schemas:
+        schemas["TicketAssignWorkersRequest"]["examples"] = [TICKET_ASSIGN_WORKERS_EXAMPLE]
 
     if "UserCreate" in schemas:
         schemas["UserCreate"]["examples"] = [

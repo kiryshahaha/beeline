@@ -35,6 +35,9 @@ class Ticket(IntegerIdMixin, Base):
     planned_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     estimated_duration_minutes: Mapped[int]
     actual_duration_minutes: Mapped[int | None]
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -54,4 +57,18 @@ class Ticket(IntegerIdMixin, Base):
         CheckConstraint("actual_duration_minutes >= 0", name="actual_duration_nonnegative"),
         Index("ix_tickets_status_planned_start", status, planned_start_at),
         Index("ix_tickets_visit_window_start", visit_window_start),
+    )
+
+
+class TicketAssignment(Base):
+    __tablename__ = "ticket_assignments"
+
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    worker_id: Mapped[int] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
