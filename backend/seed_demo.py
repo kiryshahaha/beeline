@@ -15,6 +15,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.db.session import get_engine
 
 MOSCOW_TIME = timezone(timedelta(hours=3))
@@ -212,10 +213,113 @@ def get_or_create_id(session: Session, find_sql: str, insert_sql: str, parameter
     return session.execute(text(insert_sql), parameters).scalar_one()
 
 
+DEMO_SKILLS = (
+    "Монтаж ВОЛС",
+    "Настройка оборудования",
+    "Аварийно-восстановительные работы",
+    "Подключение абонентов",
+)
+
+DEMO_USERS = (
+    {
+        "name": "Алексей",
+        "surname": "Смирнов",
+        "lastname": "Викторович",
+        "username": "demo_observer",
+        "password": "ObserverSecret123!",
+        "role": "observer",
+    },
+    {
+        "name": "Дмитрий",
+        "surname": "Кузнецов",
+        "lastname": "Сергеевич",
+        "username": "demo_worker_1",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "workshift_start": time(8, 0),
+        "workshift_end": time(17, 0),
+        "skills": ("Монтаж ВОЛС", "Подключение абонентов"),
+    },
+    {
+        "name": "Михаил",
+        "surname": "Новиков",
+        "lastname": None,
+        "username": "demo_worker_2",
+        "password": "WorkerSecret123!",
+        "role": "worker",
+        "workshift_start": time(22, 0),
+        "workshift_end": time(6, 0),
+        "skills": ("Аварийно-восстановительные работы", "Монтаж ВОЛС"),
+    },
+)
+
+
+def seed_users_and_skills(session: Session) -> None:
+    for skill_name in DEMO_SKILLS:
+        session.execute(
+            text("""
+                INSERT INTO worker_skills (skill)
+                VALUES (:skill)
+                ON CONFLICT (skill) DO NOTHING
+            """),
+            {"skill": skill_name},
+        )
+
+    for user_info in DEMO_USERS:
+        existing_id = session.execute(
+            text("SELECT id FROM users WHERE lower(username) = lower(:username)"),
+            {"username": user_info["username"]},
+        ).scalar_one_or_none()
+
+        if existing_id is None:
+            user_id = session.execute(
+                text("""
+                    INSERT INTO users (name, surname, lastname, username, password_hash, role)
+                    VALUES (:name, :surname, :lastname, :username, :password_hash, :role)
+                    RETURNING id
+                """),
+                {
+                    "name": user_info["name"],
+                    "surname": user_info["surname"],
+                    "lastname": user_info["lastname"],
+                    "username": user_info["username"],
+                    "password_hash": hash_password(user_info["password"]),
+                    "role": user_info["role"],
+                },
+            ).scalar_one()
+
+            if user_info["role"] == "worker":
+                session.execute(
+                    text("""
+                        INSERT INTO workers (user_id, workshift_start, workshift_end)
+                        VALUES (:user_id, :workshift_start, :workshift_end)
+                    """),
+                    {
+                        "user_id": user_id,
+                        "workshift_start": user_info["workshift_start"],
+                        "workshift_end": user_info["workshift_end"],
+                    },
+                )
+                for skill_name in user_info["skills"]:
+                    skill_id = session.execute(
+                        text("SELECT id FROM worker_skills WHERE skill = :skill"),
+                        {"skill": skill_name},
+                    ).scalar_one()
+                    session.execute(
+                        text("""
+                            INSERT INTO worker_skill_assignments (worker_id, skill_id)
+                            VALUES (:worker_id, :skill_id)
+                            ON CONFLICT DO NOTHING
+                        """),
+                        {"worker_id": user_id, "skill_id": skill_id},
+                    )
+
+
 def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
     """Caller owns the transaction. Existing tickets and filled coordinates are preserved."""
     # Serialize copies of this script; the lock is released on commit or rollback.
     session.execute(text("SELECT pg_advisory_xact_lock(20260912, 1)"))
+    seed_users_and_skills(session)
     city_id = get_or_create_id(
         session,
         "SELECT id FROM cities WHERE lower(name) = lower(:name)",
