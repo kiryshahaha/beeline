@@ -171,6 +171,49 @@ class TicketsApiTests(DatabaseTestCase):
                 self.assertEqual(response.status_code, 201, response.text)
                 self.assertEqual(response.json()["status"], status.value)
 
+    def test_maximum_text_lengths_and_durations_are_saved_without_truncation(self):
+        values = {
+            "title": "Я" * 200,
+            "work_type": "Ю" * 100,
+            "estimated_duration_minutes": 2_147_483_647,
+            "actual_duration_minutes": 2_147_483_647,
+        }
+        response = self.create(**values)
+        self.assertEqual(response.status_code, 201, response.text)
+        fetched = self.client.get(response.headers["Location"])
+        self.assertEqual(fetched.status_code, 200, fetched.text)
+        for field, value in values.items():
+            self.assertEqual(fetched.json()[field], value)
+
+    def test_zero_floor_and_coordinates_are_kept_in_the_address_response(self):
+        self.location.floor = 0
+        self.location.latitude = 0
+        self.location.longitude = 0
+        self.session.commit()
+        response = self.create(work_type="  Настройка Wi-Fi  ")
+        self.assertEqual(response.status_code, 201, response.text)
+        fetched = self.client.get(response.headers["Location"])
+        self.assertEqual(fetched.status_code, 200, fetched.text)
+        data = fetched.json()
+        self.assertEqual(data["work_type"], "Настройка Wi-Fi")
+        self.assertEqual(data["location"]["floor"], 0)
+        self.assertEqual(data["location"]["latitude"], 0)
+        self.assertEqual(data["location"]["longitude"], 0)
+        self.assertIn("этаж 0", data["location"]["address"])
+
+    def test_openapi_examples_keep_null_fields_and_create_a_valid_ticket(self):
+        schemas = self.client.get("/openapi.json").json()["components"]["schemas"]
+        for schema in ("TicketCreate", "TicketRead"):
+            example = schemas[schema]["examples"][0]
+            for field in ("planned_start_at", "planned_end_at", "actual_duration_minutes"):
+                self.assertIn(field, example)
+                self.assertIsNone(example[field])
+        payload = schemas["TicketCreate"]["examples"][0] | {"location_id": self.location_id}
+        response = self.client.post("/api/v1/tickets", json=payload)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["title"], payload["title"])
+        self.assertIsNone(response.json()["actual_duration_minutes"])
+
     def test_timezones_are_compared_as_instants(self):
         response = self.create(visit_window_end="2026-09-14T08:00:00Z")
         self.assertEqual(response.status_code, 201, response.text)
@@ -194,26 +237,45 @@ class TicketsApiTests(DatabaseTestCase):
             {"work_type": ""},
             {"work_type": "x" * 101},
             {"description": "text\x00text"},
+            {"title": "text\x00text"},
+            {"work_type": "text\x00text"},
             {"status": "unknown"},
             {"location_id": 0},
             {"location_id": -1},
             {"location_id": True},
             {"location_id": "1"},
+            {"location_id": 1.5},
             {"location_id": 2**31},
             {"estimated_duration_minutes": 0},
             {"estimated_duration_minutes": 2**31},
             {"estimated_duration_minutes": 1.5},
             {"estimated_duration_minutes": True},
+            {"estimated_duration_minutes": "60"},
             {"actual_duration_minutes": -1},
             {"actual_duration_minutes": 2**31},
             {"actual_duration_minutes": False},
+            {"actual_duration_minutes": 1.5},
+            {"actual_duration_minutes": "60"},
             {"title": None},
             {"status": None},
             {"visit_window_start": "2026-09-14T10:00:00"},
+            {"visit_window_end": "2026-09-14T14:00:00"},
             {"visit_window_end": "2026-09-14T10:00:00+03:00"},
             {"visit_window_end": "2026-09-14T06:00:00Z"},
             {"planned_start_at": "2026-09-14T11:00:00+03:00"},
             {"planned_end_at": "2026-09-14T12:00:00+03:00"},
+            {
+                "planned_start_at": "2026-09-14T11:00:00",
+                "planned_end_at": "2026-09-14T12:00:00+03:00",
+            },
+            {
+                "planned_start_at": "2026-09-14T11:00:00+03:00",
+                "planned_end_at": "2026-09-14T12:00:00",
+            },
+            {
+                "planned_start_at": "2026-09-14T11:00:00+03:00",
+                "planned_end_at": "2026-09-14T08:00:00Z",
+            },
             {
                 "planned_start_at": "2026-09-14T12:00:00+03:00",
                 "planned_end_at": "2026-09-14T11:00:00+03:00",
@@ -245,6 +307,34 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(response.json(), {"detail": "Место выполнения не найдено"})
         self.assertEqual(self.count_tickets(), 0)
 
+    def test_missing_malformed_and_non_object_bodies_do_not_create_tickets(self):
+        for body in ("", "{", "null", "[]", '"text"'):
+            with self.subTest(body=body):
+                response = self.client.post(
+                    "/api/v1/tickets", content=body, headers={"Content-Type": "application/json"}
+                )
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertIn("detail", response.json())
+        self.assertEqual(self.count_tickets(), 0)
+
+    def test_two_requests_at_one_address_remain_independent_tickets(self):
+        first = self.create(title="Настроить Wi-Fi", status="completed", actual_duration_minutes=25)
+        second = self.create(title="Проверить скорость")
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertNotEqual(first.json()["id"], second.json()["id"])
+        results = []
+        for created in (first, second):
+            response = self.client.get(created.headers["Location"])
+            self.assertEqual(response.status_code, 200, response.text)
+            results.append(response.json())
+        self.assertEqual(results[0]["location"], results[1]["location"])
+        self.assertEqual(results[0]["status"], "completed")
+        self.assertEqual(results[0]["actual_duration_minutes"], 25)
+        self.assertEqual(results[1]["status"], "planned")
+        self.assertIsNone(results[1]["actual_duration_minutes"])
+        self.assertEqual(self.count_tickets(), 2)
+
     def test_missing_ticket_and_invalid_path_id(self):
         response = self.client.get("/api/v1/tickets/2147483647")
         self.assertEqual(response.status_code, 404)
@@ -254,6 +344,7 @@ class TicketsApiTests(DatabaseTestCase):
                 self.assertEqual(self.client.get(f"/api/v1/tickets/{ticket_id}").status_code, 422)
 
     def test_building_location_without_coordinates_and_apartment_can_be_read(self):
+        self.session.get(Building, self.location.building_id).block = None
         self.location.entrance_id = None
         self.location.floor = None
         self.location.apartment = None
@@ -264,6 +355,7 @@ class TicketsApiTests(DatabaseTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         location = response.json()["location"]
         for field in (
+            "block",
             "entrance_id",
             "entrance_number",
             "floor",
@@ -273,7 +365,7 @@ class TicketsApiTests(DatabaseTestCase):
         ):
             self.assertIsNone(location[field])
         self.assertEqual(
-            location["address"], "Санкт-Петербург, Невский район, Тестовая улица, д. 12А, корпус 2"
+            location["address"], "Санкт-Петербург, Невский район, Тестовая улица, д. 12А"
         )
         listed = self.client.get("/api/v1/tickets")
         self.assertEqual(listed.status_code, 200, listed.text)

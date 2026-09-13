@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema, DropSchema
@@ -61,3 +61,17 @@ class DatabaseTestCase(unittest.TestCase):
         self.addCleanup(self.connection.close)
         self.addCleanup(self.transaction.rollback)
         self.addCleanup(self.session.close)
+
+
+class CommittedDatabaseTestCase(DatabaseTestCase):
+    """Allow real commits; reset only this class's isolated schema before each test."""
+
+    def setUp(self):
+        with self.engine.begin() as connection:
+            if connection.execute(text("SELECT current_schema()")).scalar_one() != self.schema:
+                raise RuntimeError("Refusing to reset tables outside the isolated test schema")
+            connection.execute(
+                text(
+                    "TRUNCATE tickets, locations, entrances, buildings, streets, districts, cities"
+                )
+            )
