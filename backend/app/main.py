@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.modules.locations.router import router as locations_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 
@@ -11,6 +12,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(locations_router)
 app.include_router(tickets_router)
 
 
