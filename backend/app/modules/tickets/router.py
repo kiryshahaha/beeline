@@ -6,12 +6,22 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, st
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
+from app.modules.auth.dependencies import get_current_user, require_roles
 from app.modules.tickets import service
 from app.modules.tickets.enums import TicketStatus
-from app.modules.tickets.schemas import TicketCreate, TicketRead
+from app.modules.tickets.schemas import (
+    TicketAssigneesUpdate,
+    TicketCreate,
+    TicketRead,
+    TicketStatusUpdate,
+)
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserRead
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
+CurrentUser = Annotated[UserRead, Depends(get_current_user)]
+CurrentObserver = Annotated[UserRead, Depends(require_roles(UserRole.OBSERVER))]
 
 
 @router.get("", response_model=list[TicketRead])
@@ -62,3 +72,39 @@ def get_ticket(
         return service.get_ticket(session, id)
     except service.TicketNotFoundError as error:
         raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+
+
+@router.put("/{id}/assignees", response_model=TicketRead)
+def replace_ticket_assignees(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: TicketAssigneesUpdate,
+    session: DatabaseSession,
+    _current_user: CurrentObserver,
+) -> TicketRead:
+    """Replace the complete worker list; newly assigned workers receive an event."""
+    try:
+        return service.replace_assignees(session, id, data.worker_ids)
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.WorkerNotFoundError as error:
+        raise HTTPException(
+            status_code=422, detail="Один или несколько исполнителей не найдены"
+        ) from error
+
+
+@router.patch("/{id}/status", response_model=TicketRead)
+def update_ticket_status(
+    id: Annotated[int, Path(ge=1, le=2_147_483_647)],
+    data: TicketStatusUpdate,
+    session: DatabaseSession,
+    current_user: CurrentUser,
+) -> TicketRead:
+    """Change status as an observer or a worker assigned to this ticket."""
+    try:
+        return service.update_ticket_status(session, id, data.status, current_user)
+    except service.TicketNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Заявка не найдена") from error
+    except service.PermissionDeniedError as error:
+        raise HTTPException(
+            status_code=403, detail="Исполнитель не назначен на эту заявку"
+        ) from error

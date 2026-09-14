@@ -7,6 +7,8 @@ from app.modules.locations.schemas import LocationRead
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
+from app.modules.users.enums import UserRole
+from app.modules.users.schemas import UserRead
 
 
 class LocationNotFoundError(Exception):
@@ -14,6 +16,14 @@ class LocationNotFoundError(Exception):
 
 
 class TicketNotFoundError(Exception):
+    pass
+
+
+class WorkerNotFoundError(Exception):
+    pass
+
+
+class PermissionDeniedError(Exception):
     pass
 
 
@@ -51,6 +61,7 @@ def _ticket_from_row(details: RowMapping) -> TicketRead:
         id=details["id"],
         created_at=details["created_at"],
         updated_at=details["updated_at"],
+        assignee_ids=list(details["assignee_ids"]),
         location=LocationRead(
             id=details["location_id"],
             city_id=details["city_id"],
@@ -80,4 +91,56 @@ def create_ticket(session: Session, data: TicketCreate) -> TicketRead:
         values["status"] = data.status.value
         ticket_id = repository.add_ticket(session, values)
         # Build the response inside the transaction; a failed operation leaves no ticket.
+        return get_ticket(session, ticket_id)
+
+
+def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -> TicketRead:
+    with session.begin():
+        ticket = repository.lock_ticket(session, ticket_id)
+        if ticket is None:
+            raise TicketNotFoundError
+        if repository.find_worker_ids(session, worker_ids) != set(worker_ids):
+            raise WorkerNotFoundError
+        new_worker_ids = repository.replace_assignees(session, ticket_id, worker_ids)
+        for worker_id in new_worker_ids:
+            repository.add_notification_events(
+                session,
+                [worker_id],
+                kind="ticket_assigned",
+                ticket_id=ticket_id,
+                data={"title": ticket["title"], "worker_id": worker_id},
+            )
+        return get_ticket(session, ticket_id)
+
+
+def update_ticket_status(
+    session: Session,
+    ticket_id: int,
+    status: TicketStatus,
+    current_user: UserRead,
+) -> TicketRead:
+    with session.begin():
+        ticket = repository.lock_ticket(session, ticket_id)
+        if ticket is None:
+            raise TicketNotFoundError
+        if current_user.role == UserRole.WORKER and not repository.is_worker_assigned(
+            session, ticket_id, current_user.id
+        ):
+            raise PermissionDeniedError
+        previous_status = ticket["status"]
+        if previous_status == status.value:
+            return get_ticket(session, ticket_id)
+        repository.update_status(session, ticket_id, status.value)
+        repository.add_notification_events(
+            session,
+            repository.list_observer_ids(session),
+            kind="ticket_status_changed",
+            ticket_id=ticket_id,
+            data={
+                "title": ticket["title"],
+                "previous_status": previous_status,
+                "status": status.value,
+                "actor_id": current_user.id,
+            },
+        )
         return get_ticket(session, ticket_id)

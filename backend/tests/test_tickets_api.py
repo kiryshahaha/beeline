@@ -493,13 +493,25 @@ class TicketsApiTests(DatabaseTestCase):
                     )
         self.assertEqual(self.count_tickets(), 1)
 
-    def test_openapi_exposes_three_ticket_operations(self):
+    def test_openapi_exposes_ticket_read_write_and_workflow_operations(self):
         schema = self.client.get("/openapi.json").json()
         paths = schema["paths"]
         ticket_paths = {path for path in paths if path.startswith("/api/v1/tickets")}
-        self.assertEqual(ticket_paths, {"/api/v1/tickets", "/api/v1/tickets/{id}"})
+        self.assertEqual(
+            ticket_paths,
+            {
+                "/api/v1/tickets",
+                "/api/v1/tickets/{id}",
+                "/api/v1/tickets/{id}/assignees",
+                "/api/v1/tickets/{id}/comments",
+                "/api/v1/tickets/{id}/status",
+            },
+        )
         self.assertEqual(set(paths["/api/v1/tickets"]), {"post", "get"})
         self.assertEqual(set(paths["/api/v1/tickets/{id}"]), {"get"})
+        self.assertEqual(set(paths["/api/v1/tickets/{id}/assignees"]), {"put"})
+        self.assertEqual(set(paths["/api/v1/tickets/{id}/comments"]), {"get", "post"})
+        self.assertEqual(set(paths["/api/v1/tickets/{id}/status"]), {"patch"})
         operation = paths["/api/v1/tickets"]["get"]
         parameters = {param["name"]: param for param in operation["parameters"]}
         self.assertEqual(set(parameters), {"status", "city_id", "district_id", "limit", "offset"})

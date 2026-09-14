@@ -7,7 +7,17 @@ from unittest.mock import patch
 
 from sqlalchemy import func, select
 
-from app.db.models import Building, City, District, Entrance, Location, Street, Ticket
+from app.db.models import (
+    Building,
+    City,
+    District,
+    Entrance,
+    Location,
+    Street,
+    Ticket,
+    TicketAssignment,
+    TicketComment,
+)
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.service import get_ticket
 from seed_demo import DEMO_VISITS, MOSCOW_TIME, seed_data
@@ -70,6 +80,37 @@ class SeedDemoTests(DatabaseTestCase):
         self.assertEqual(ticket.status, TicketStatus.COMPLETED)
         self.assertEqual(ticket.actual_duration_minutes, 75)
         self.assertEqual(ticket.description, "Пояснение после выполнения")
+
+    def test_demo_assignments_and_comments_are_repeatable_and_preserve_manual_text(self):
+        first = seed_data(self.session, self.visit_date)
+        assignment_count = self.session.scalar(select(func.count()).select_from(TicketAssignment))
+        comment_count = self.session.scalar(select(func.count()).select_from(TicketComment))
+        self.assertEqual(assignment_count, len(DEMO_VISITS))
+        self.assertEqual(comment_count, len(DEMO_VISITS))
+        self.assertTrue(
+            all(get_ticket(self.session, item.ticket_id).assignee_ids for item in first)
+        )
+
+        first_comment = self.session.scalars(
+            select(TicketComment).order_by(TicketComment.id)
+        ).first()
+        first_comment.text = "Исправленная вручную заметка"
+        self.session.flush()
+        seed_data(self.session, self.visit_date + timedelta(days=1))
+        self.session.expire_all()
+
+        self.assertEqual(
+            self.session.scalar(select(func.count()).select_from(TicketAssignment)),
+            assignment_count,
+        )
+        self.assertEqual(
+            self.session.scalar(select(func.count()).select_from(TicketComment)),
+            comment_count,
+        )
+        self.assertEqual(
+            self.session.get(TicketComment, first_comment.id).text,
+            "Исправленная вручную заметка",
+        )
 
     def test_two_apartments_share_building_and_two_tickets_share_one_apartment(self):
         results = seed_data(self.session, self.visit_date)

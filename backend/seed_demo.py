@@ -498,6 +498,52 @@ def seed_data(session: Session, visit_date: date) -> list[SeedResult]:
                 created=created,
             )
         )
+    observer_id = session.execute(
+        text("SELECT id FROM users WHERE username = 'demo_observer'")
+    ).scalar_one()
+    worker_ids = list(
+        session.execute(
+            text("""
+                SELECT w.user_id
+                FROM workers AS w
+                JOIN users AS u ON u.id = w.user_id
+                WHERE u.username IN ('demo_worker_1', 'demo_worker_2')
+                ORDER BY u.username
+            """)
+        ).scalars()
+    )
+    for index, result in enumerate(results):
+        worker_id = worker_ids[index % len(worker_ids)]
+        session.execute(
+            text("""
+                INSERT INTO ticket_assignments (ticket_id, worker_id)
+                VALUES (:ticket_id, :worker_id)
+                ON CONFLICT DO NOTHING
+            """),
+            {"ticket_id": result.ticket_id, "worker_id": worker_id},
+        )
+        existing_comment = session.execute(
+            text("""
+                SELECT id
+                FROM ticket_comments
+                WHERE ticket_id = :ticket_id AND author_id = :author_id
+                ORDER BY id
+                LIMIT 1
+            """),
+            {"ticket_id": result.ticket_id, "author_id": observer_id},
+        ).scalar_one_or_none()
+        if existing_comment is None:
+            session.execute(
+                text("""
+                    INSERT INTO ticket_comments (ticket_id, author_id, text)
+                    VALUES (:ticket_id, :author_id, :text)
+                """),
+                {
+                    "ticket_id": result.ticket_id,
+                    "author_id": observer_id,
+                    "text": "Демонстрационная заметка наблюдателя к заявке.",
+                },
+            )
     return results
 
 
