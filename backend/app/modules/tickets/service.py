@@ -4,6 +4,7 @@ from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
 from app.modules.locations.schemas import LocationRead
+from app.modules.notifications.enums import NotificationKind
 from app.modules.tickets import repository
 from app.modules.tickets.enums import TicketStatus
 from app.modules.tickets.schemas import TicketCreate, TicketFields, TicketRead
@@ -106,7 +107,7 @@ def replace_assignees(session: Session, ticket_id: int, worker_ids: list[int]) -
             repository.add_notification_events(
                 session,
                 [worker_id],
-                kind="ticket_assigned",
+                kind=NotificationKind.TICKET_ASSIGNED,
                 ticket_id=ticket_id,
                 data={"title": ticket["title"], "worker_id": worker_id},
             )
@@ -134,7 +135,7 @@ def update_ticket_status(
         repository.add_notification_events(
             session,
             repository.list_observer_ids(session),
-            kind="ticket_status_changed",
+            kind=NotificationKind.TICKET_STATUS_CHANGED,
             ticket_id=ticket_id,
             data={
                 "title": ticket["title"],

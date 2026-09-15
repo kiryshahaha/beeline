@@ -2,11 +2,21 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    func,
+)
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IntegerIdMixin
+from app.modules.notifications.enums import NotificationKind
 
 
 class PushSubscription(IntegerIdMixin, Base):
@@ -32,7 +42,16 @@ class NotificationEvent(IntegerIdMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[NotificationKind] = mapped_column(
+        SqlEnum(
+            NotificationKind,
+            values_callable=lambda kinds: [kind.value for kind in kinds],
+            native_enum=False,
+            create_constraint=False,
+            length=40,
+            name="notification_kind",
+        )
+    )
     data: Mapped[dict] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     websocket_delivered_at: Mapped[datetime | None] = mapped_column(

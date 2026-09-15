@@ -4,6 +4,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.modules.auth.enums import TokenType
+
 LOGIN_REQUEST_EXAMPLE = {
     "username": "ivanov_worker",
     "password": "StrongPassword123!",
@@ -43,5 +45,5 @@ class TokenResponse(BaseModel):
 
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: TokenType = TokenType.BEARER
     expires_in: int = Field(description="Время жизни access-токена в секундах")

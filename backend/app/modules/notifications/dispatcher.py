@@ -11,25 +11,28 @@ from app.core.config import get_settings
 from app.db.session import get_engine
 from app.modules.notifications import repository
 from app.modules.notifications.connections import connection_manager as default_connection_manager
+from app.modules.notifications.enums import NotificationKind
 from app.modules.notifications.firebase import create_push_gateway
 
 logger = logging.getLogger(__name__)
 
 
 def _event_payload(event) -> dict:
+    kind = NotificationKind(event["kind"])
     return {
         "id": event["id"],
         "recipient_id": event["recipient_id"],
         "ticket_id": event["ticket_id"],
-        "kind": event["kind"],
+        "kind": kind.value,
         "data": event["data"],
         "created_at": event["created_at"].isoformat(),
     }
 
 
 def _push_content(event) -> tuple[str, str, dict[str, str]]:
+    kind = NotificationKind(event["kind"])
     ticket_title = event["data"].get("title", f"Заявка №{event['ticket_id']}")
-    if event["kind"] == "ticket_assigned":
+    if kind == NotificationKind.TICKET_ASSIGNED:
         push_title = "Новая заявка"
         body = f"Вам назначена заявка «{ticket_title}»"
     else:
@@ -37,7 +40,7 @@ def _push_content(event) -> tuple[str, str, dict[str, str]]:
         body = f"«{ticket_title}»: {event['data'].get('status', '')}"
     data = {
         "event_id": str(event["id"]),
-        "kind": str(event["kind"]),
+        "kind": kind.value,
         "ticket_id": str(event["ticket_id"]),
     }
     for key, value in event["data"].items():

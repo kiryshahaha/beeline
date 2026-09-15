@@ -3,6 +3,8 @@
 from sqlalchemy import RowMapping, text
 from sqlalchemy.orm import Session
 
+from app.modules.notifications.enums import NotificationKind
+
 # Shared columns and joins keep single-ticket and list responses identical.
 TICKET_SELECT_SQL = """
     SELECT
@@ -151,7 +153,7 @@ def add_notification_events(
     session: Session,
     recipient_ids: list[int] | set[int],
     *,
-    kind: str,
+    kind: NotificationKind,
     ticket_id: int,
     data: dict[str, object],
 ) -> None:
@@ -167,7 +169,7 @@ def add_notification_events(
             {
                 "recipient_id": recipient_id,
                 "ticket_id": ticket_id,
-                "kind": kind,
+                "kind": kind.value,
                 "data": payload,
             },
         )
