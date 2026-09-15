@@ -55,3 +55,17 @@ class Ticket(IntegerIdMixin, Base):
         Index("ix_tickets_status_planned_start", status, planned_start_at),
         Index("ix_tickets_visit_window_start", visit_window_start),
     )
+
+
+class TicketAssignment(Base):
+    __tablename__ = "ticket_assignments"
+
+    ticket_id: Mapped[int] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    worker_id: Mapped[int] = mapped_column(
+        ForeignKey("workers.user_id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

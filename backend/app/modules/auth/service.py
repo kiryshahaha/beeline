@@ -12,6 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth import repository
+from app.modules.auth.enums import TokenType
 from app.modules.auth.schemas import TokenResponse
 from app.modules.users import repository as users_repository
 
@@ -49,7 +50,7 @@ def authenticate_user(session: Session, username: str, password: str) -> TokenRe
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
-            token_type="bearer",
+            token_type=TokenType.BEARER,
             expires_in=settings.jwt_access_token_expire_minutes * 60,
         )
 
@@ -95,7 +96,7 @@ def refresh_access_token(session: Session, raw_token: str) -> TokenResponse:
         return TokenResponse(
             access_token=new_access_token,
             refresh_token=new_refresh_token,
-            token_type="bearer",
+            token_type=TokenType.BEARER,
             expires_in=settings.jwt_access_token_expire_minutes * 60,
         )
 

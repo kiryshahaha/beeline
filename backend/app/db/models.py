@@ -2,11 +2,13 @@
 
 from app.modules.buildings.models import Building
 from app.modules.cities.models import City
+from app.modules.comments.models import TicketComment
 from app.modules.districts.models import District
 from app.modules.entrances.models import Entrance
 from app.modules.locations.models import Location
+from app.modules.notifications.models import NotificationEvent, PushSubscription
 from app.modules.streets.models import Street
-from app.modules.tickets.models import Ticket
+from app.modules.tickets.models import Ticket, TicketAssignment
 from app.modules.users.models import (
     RefreshToken,
     User,
@@ -21,9 +23,13 @@ __all__ = [
     "District",
     "Entrance",
     "Location",
+    "NotificationEvent",
+    "PushSubscription",
     "RefreshToken",
     "Street",
     "Ticket",
+    "TicketAssignment",
+    "TicketComment",
     "User",
     "Worker",
     "WorkerSkill",

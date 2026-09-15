@@ -36,6 +36,7 @@ TICKET_CREATE_EXAMPLE = {
 TICKET_READ_EXAMPLE = {
     **TICKET_CREATE_EXAMPLE,
     "id": 1,
+    "assignee_ids": [2],
     "created_at": "2026-09-13T09:00:00+03:00",
     "updated_at": "2026-09-13T09:00:00+03:00",
     "location": {
@@ -131,6 +132,27 @@ class TicketCreate(TicketFields):
     )
 
 
+class TicketAssigneesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    worker_ids: list[PositiveInt32] = Field(
+        min_length=0,
+        max_length=100,
+        description="Полный список ID исполнителей, назначенных на заявку.",
+    )
+
+    @field_validator("worker_ids")
+    @classmethod
+    def remove_duplicates(cls, values: list[int]) -> list[int]:
+        return list(dict.fromkeys(values))
+
+
+class TicketStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: TicketStatus
+
+
 class TicketRead(TicketFields):
     model_config = ConfigDict(json_schema_extra={"examples": [TICKET_READ_EXAMPLE]})
 
@@ -138,3 +160,4 @@ class TicketRead(TicketFields):
     created_at: AwareDatetime
     updated_at: AwareDatetime
     location: LocationRead
+    assignee_ids: list[int] = Field(default_factory=list)

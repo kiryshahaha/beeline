@@ -5,7 +5,7 @@ from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
@@ -14,12 +14,15 @@ from app.modules.users import service as users_service
 from app.modules.users.enums import UserRole
 from app.modules.users.schemas import UserRead
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+bearer_scheme = HTTPBearer(auto_error=False, scheme_name="BearerAuth")
 DatabaseSession = Annotated[Session, Depends(get_session)]
 
 
 def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
     session: DatabaseSession,
 ) -> UserRead:
     credentials_exception = HTTPException(
@@ -27,6 +30,10 @@ def get_current_user(
         detail="Недействительный или просроченный токен авторизации",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if credentials is None:
+        raise credentials_exception
+
+    token = credentials.credentials
     try:
         payload = decode_token(token)
         if payload.get("type") != "access":

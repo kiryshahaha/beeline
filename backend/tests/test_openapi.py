@@ -14,6 +14,11 @@ class OpenApiTests(unittest.TestCase):
             "/health",
             "/api/v1/tickets",
             "/api/v1/tickets/{id}",
+            "/api/v1/tickets/{id}/assignees",
+            "/api/v1/tickets/{id}/status",
+            "/api/v1/tickets/{id}/comments",
+            "/api/v1/notifications",
+            "/api/v1/notifications/push-subscriptions",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
             "/api/v1/auth/logout",
@@ -29,6 +34,30 @@ class OpenApiTests(unittest.TestCase):
         self.assertIn("get", user_by_id_ops)
         self.assertIn("patch", user_by_id_ops)
         self.assertIn("delete", user_by_id_ops)
+
+        protected_operations = (
+            paths["/api/v1/tickets/{id}/assignees"]["put"],
+            paths["/api/v1/tickets/{id}/status"]["patch"],
+            paths["/api/v1/tickets/{id}/comments"]["get"],
+            paths["/api/v1/tickets/{id}/comments"]["post"],
+            paths["/api/v1/notifications"]["get"],
+            paths["/api/v1/notifications/push-subscriptions"]["post"],
+            paths["/api/v1/notifications/push-subscriptions"]["delete"],
+        )
+        self.assertTrue(all(operation.get("security") for operation in protected_operations))
+
+    def test_openapi_uses_http_bearer_for_access_tokens(self):
+        schema = app.openapi()
+        security_schemes = schema["components"]["securitySchemes"]
+
+        self.assertEqual(
+            security_schemes["BearerAuth"],
+            {"type": "http", "scheme": "bearer"},
+        )
+        self.assertIn(
+            {"BearerAuth": []},
+            schema["paths"]["/api/v1/users"]["get"]["security"],
+        )
 
     def test_openapi_schema_contains_custom_examples(self):
         schema = app.openapi()

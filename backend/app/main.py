@@ -1,5 +1,8 @@
 """FastAPI entry point and module router registration."""
 
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.modules.auth.router import router as auth_router
@@ -8,7 +11,10 @@ from app.modules.auth.schemas import (
     REFRESH_TOKEN_REQUEST_EXAMPLE,
     TOKEN_RESPONSE_EXAMPLE,
 )
+from app.modules.comments.router import router as comments_router
 from app.modules.locations.router import router as locations_router
+from app.modules.notifications.dispatcher import create_dispatcher
+from app.modules.notifications.router import router as notifications_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.tickets.schemas import TICKET_CREATE_EXAMPLE, TICKET_READ_EXAMPLE
 from app.modules.users.router import router as users_router
@@ -23,10 +29,32 @@ from app.modules.users.schemas import (
     WORKER_SKILL_EXAMPLE,
 )
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    task = None
+    if settings.notification_dispatcher_enabled:
+        dispatcher = create_dispatcher()
+        task = asyncio.create_task(dispatcher.run(settings.notification_poll_interval_seconds))
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
 app = FastAPI(
     title="Планирование выездных работ",
     description="Основа сервиса: заявки, адресный справочник, пользователи и авторизация.",
     version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.include_router(locations_router)
@@ -34,6 +62,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(skills_router)
 app.include_router(tickets_router)
+app.include_router(comments_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health", tags=["system"])

@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
+    notification_dispatcher_enabled: bool = True
+    notification_poll_interval_seconds: float = 1.0
+    firebase_enabled: bool = False
+    firebase_project_id: str | None = None
 
 
 @lru_cache
